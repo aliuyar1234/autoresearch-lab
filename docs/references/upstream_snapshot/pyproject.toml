@@ -14,7 +14,6 @@ dependencies = [
     "rustbpe>=0.1.0",
     "tiktoken>=0.11.0",
     "torch==2.9.1",
-    "triton-windows==3.5.1.post22; platform_system == 'Windows'",
 ]
 
 [tool.uv.sources]

@@ -1,0 +1,56 @@
+id,phase,title,area,priority,status,depends_on,acceptance_summary
+F0.1,0,Establish package skeleton,foundation,P0,planned,,`import lab` works with no side effects
+F0.2,0,Implement path registry,foundation,P0,planned,F0.1,managed roots resolve from repo root and are tested
+F0.3,0,Implement settings loader,foundation,P0,planned,F0.2,env/default/CLI precedence works
+F0.4,0,Create CLI skeleton,cli,P0,planned,"F0.1,F0.3",bootstrap/preflight/smoke help paths work
+F0.5,0,Bootstrap managed roots and DB init,foundation,P0,planned,"F0.2,F0.4",bootstrap idempotently creates directories and DB
+F0.6,0,Preflight basic machine checks,runtime,P0,planned,F0.4,preflight emits structured JSON and warnings
+F0.7,0,Set up tests skeleton,testing,P1,planned,F0.1,unit and integration tests run
+F1.1,1,Initialize SQLite schema loader,ledger,P0,planned,F0.5,schema loads from sql/001_ledger.sql
+F1.2,1,Create record models and DB queries,ledger,P0,planned,F1.1,experiments/proposals/artifacts query cleanly
+F1.3,1,Materialize run manifest before launch,runner,P0,planned,F1.1,manifest exists before subprocess starts
+F1.4,1,Implement subprocess runner,runner,P0,planned,F1.3,success/failure/timeout terminal states recorded
+F1.5,1,Implement crash classification,runner,P0,planned,F1.4,common crash classes covered by tests
+F1.6,1,Write artifact index,artifacts,P1,planned,F1.3,artifact index lists retained outputs with hashes
+F1.7,1,Implement inspect command,cli,P1,planned,"F1.2,F1.4",inspect shows proposal/run details
+F1.8,1,Implement preliminary score explanation,scoring,P2,planned,F1.4,score command can explain raw metric/status
+F2.1,2,Campaign registry and loader,campaigns,P0,planned,F0.3,campaigns list/show works
+F2.2,2,Campaign schema validation,campaigns,P0,planned,F2.1,invalid manifest fails before side effects
+F2.3,2,Define base_2k campaign,campaigns,P0,planned,F2.2,base_2k captures upstream-like constants
+F2.4,2,Offline tokenizer asset builder,data,P0,planned,F2.3,tokenizer assets hashed and manifest written
+F2.5,2,Pretokenized shard cache,data,P0,planned,F2.4,raw docs tokenized offline to disk
+F2.6,2,Packed block builder,data,P0,planned,F2.5,packed blocks and utilization stats written
+F2.7,2,Campaign verify command,campaigns,P1,planned,"F2.4,F2.6",verify checks hashes and required assets
+F2.8,2,Document train-path asset contract,docs,P2,planned,F2.6,research surface knows asset format
+F3.1,3,Primary metric comparator,scoring,P0,planned,"F1.8,F2.2",min/max and tie thresholds tested
+F3.2,3,Lane policy scout/main/confirm,scoring,P0,planned,F3.1,promotion ladder encoded by rule
+F3.3,3,Split policy search/audit/locked,scoring,P1,planned,F2.2,score output names split used
+F3.4,3,Complexity-aware tie breaks,scoring,P1,planned,F3.1,near-ties prefer simpler/cheaper proposals
+F3.5,3,Persist promotion reasons,ledger,P1,planned,F3.2,ledger and reports can explain dispositions
+F3.6,3,Confirm and replication path,scoring,P2,planned,F3.2,promising candidates can confirm with longer run or second seed
+F4.1,4,Persistent proposal queue,scheduler,P0,planned,"F1.2,F3.2",queue survives restart
+F4.2,4,Structured proposal generator,scheduler,P0,planned,F4.1,exploit/ablate/combine/novel proposals generated
+F4.3,4,Elite archive logic,scheduler,P0,planned,"F4.1,F3.2",champion and near-miss buckets maintained
+F4.4,4,Selection policy for next run,scheduler,P1,planned,"F4.2,F4.3",scheduler balances exploit and novelty
+F4.5,4,Worktree manager for code proposals,worktrees,P1,planned,F4.1,isolated worktree lifecycle works
+F4.6,4,Export code proposal packs,proposals,P1,planned,F4.5,pack is self-sufficient for coding agent
+F4.7,4,Import returned code proposals,proposals,P2,planned,F4.6,returned patch enters normal scoring path
+F5.1,5,Split trainer into dense_gpt package,research,P0,planned,F2.8,research package exists without over-abstraction
+F5.2,5,Establish baseline parity config,research,P0,planned,"F5.1,F2.3",base_2k baseline-like config runs
+F5.3,5,Implement structured search knobs,research,P0,planned,F5.1,required v1 knobs exposed
+F5.4,5,Implement backend/device profile layer,runtime,P0,planned,F0.6,backend selected and recorded
+F5.5,5,Emit machine-readable summary,research,P0,planned,"F1.3,F5.1",summary validates against schema
+F5.6,5,Checkpoint before eval,research,P1,planned,F5.5,pre_eval checkpoint exists for required lanes
+F5.7,5,GPU tiny smoke path,testing,P1,planned,"F5.4,F5.5",tiny real run completes on GPU
+F6.1,6,Night session orchestrator,reports,P0,planned,"F4.4,F5.5",bounded unattended session runs and ends cleanly
+F6.2,6,Daily report renderer,reports,P0,planned,F6.1,report.md and report.json generated
+F6.3,6,Leaderboard renderer,reports,P1,planned,"F3.2,F6.2",campaign-local leaderboard artifact generated
+F6.4,6,Champion cards,reports,P1,planned,"F4.3,F6.2",champion card written for important runs
+F6.5,6,Crash summary reporting,reports,P1,planned,"F1.5,F6.2",reports aggregate crash classes
+F6.6,6,Recommendation heuristics,reports,P2,planned,"F4.2,F6.2",report suggests next actions
+F7.1,7,Resume interrupted sessions,reliability,P0,planned,"F4.1,F6.1",night session can resume from ledger
+F7.2,7,Cleanup policy and dry-run,reliability,P0,planned,"F1.6,F4.3",cleanup preserves retained artifacts
+F7.3,7,Doctor/extended diagnostics,reliability,P1,planned,F7.1,diagnostics detect integrity issues
+F7.4,7,Crash exemplar retention,reliability,P1,planned,"F1.5,F6.5",representative failures preserved
+F7.5,7,Final smoke commands,testing,P1,planned,"F7.1,F7.2",smoke and smoke --gpu documented and passing
+F7.6,7,Final docs and quality score sync,docs,P0,planned,F7.5,docs/specs/tests/schemas aligned

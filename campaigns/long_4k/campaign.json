@@ -1,0 +1,111 @@
+{
+  "campaign_id": "long_4k",
+  "version": "1.1.0",
+  "title": "Long-context 4k campaign",
+  "description": "A separate campaign for testing long-context choices, runtime behavior, and memory-aware dense modeling.",
+  "active": true,
+  "comparability_group": "long_4k",
+  "primary_metric": {
+    "name": "val_bpb",
+    "direction": "min",
+    "report_precision": 6,
+    "tie_threshold": 0.0004
+  },
+  "budgets": {
+    "scout_seconds": 90,
+    "main_seconds": 360,
+    "confirm_seconds": 1200,
+    "replication_seeds": [
+      42
+    ],
+    "confirm_mode": "longer_budget"
+  },
+  "dataset": {
+    "source": "karpathy/climbmix-400b-shuffle",
+    "format": "parquet",
+    "builder": "lab.campaigns.builders.long_4k",
+    "trust_model": "public_hf_dataset+local_hash_manifest",
+    "raw_cache_root": "artifacts/cache/raw/climbmix-400b-shuffle",
+    "sampling_policy": "all_shards_except_explicit_holdouts"
+  },
+  "tokenizer": {
+    "kind": "bpe",
+    "vocab_size": 8192,
+    "artifact_files": [
+      "tokenizer.json",
+      "merges.txt",
+      "tokenizer.meta.json"
+    ]
+  },
+  "sequence_length": 4096,
+  "vocab_size": 8192,
+  "splits": {
+    "train": {
+      "selector": "all_shards_except_explicit_list",
+      "exclude_shards": [
+        "shard_06540.parquet",
+        "shard_06541.parquet",
+        "shard_06542.parquet"
+      ]
+    },
+    "search_val": {
+      "selector": "explicit_shards",
+      "shards": [
+        "shard_06542.parquet"
+      ],
+      "token_budget": 4194304
+    },
+    "audit_val": {
+      "selector": "explicit_shards",
+      "shards": [
+        "shard_06541.parquet"
+      ],
+      "token_budget": 2097152
+    },
+    "locked_val": {
+      "selector": "explicit_shards",
+      "shards": [
+        "shard_06540.parquet"
+      ],
+      "token_budget": 2097152
+    }
+  },
+  "assets": {
+    "root": "artifacts/cache/campaigns/long_4k",
+    "tokenizer_manifest": "tokenizer.manifest.json",
+    "pretok_manifest": "pretok.manifest.json",
+    "packed_manifest": "packed.manifest.json"
+  },
+  "search_space": {
+    "module": "research.dense_gpt.search_space",
+    "profile": "long_4k"
+  },
+  "promotion": {
+    "scout_to_main_min_delta": 0.0005,
+    "main_to_confirm_min_delta": 0.0004,
+    "champion_min_delta": 0.0003,
+    "allow_complexity_tie_break": true
+  },
+  "retention": {
+    "discarded": "summary+logs_only",
+    "promoted": "full_artifacts",
+    "champion": "full_artifacts_plus_archive",
+    "crash": "summary+logs+exemplar"
+  },
+  "runtime": {
+    "allowed_device_profiles": [
+      "rtx_pro_6000_96gb",
+      "generic_single_gpu_nvidia"
+    ],
+    "preferred_dtype": "bfloat16",
+    "backend_policy": "benchmark_and_cache",
+    "compile_cache_policy": "by_device_profile+shape_family+backend",
+    "max_peak_vram_gb": 92
+  },
+  "baseline": {
+    "name": "long_context_dense_seed",
+    "source": "campaign_local_baseline",
+    "target_metric": "campaign-local leaderboard baseline",
+    "notes": "Not directly comparable to base_2k."
+  }
+}

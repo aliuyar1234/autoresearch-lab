@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Campaign",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "campaign_id",
+    "version",
+    "title",
+    "description",
+    "active",
+    "comparability_group",
+    "primary_metric",
+    "budgets",
+    "dataset",
+    "tokenizer",
+    "sequence_length",
+    "vocab_size",
+    "splits",
+    "assets",
+    "search_space",
+    "promotion",
+    "retention",
+    "runtime",
+    "baseline"
+  ],
+  "properties": {
+    "campaign_id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "comparability_group": {
+      "type": "string"
+    },
+    "primary_metric": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "direction",
+        "report_precision",
+        "tie_threshold"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "min",
+            "max"
+          ]
+        },
+        "report_precision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tie_threshold": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "scout_seconds",
+        "main_seconds",
+        "confirm_seconds"
+      ],
+      "properties": {
+        "scout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "main_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "confirm_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "replication_seeds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "confirm_mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "required": [
+        "source",
+        "format",
+        "builder",
+        "trust_model",
+        "raw_cache_root"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "builder": {
+          "type": "string"
+        },
+        "trust_model": {
+          "type": "string"
+        },
+        "raw_cache_root": {
+          "type": "string"
+        }
+      }
+    },
+    "tokenizer": {
+      "type": "object",
+      "required": [
+        "kind",
+        "vocab_size",
+        "artifact_files"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "vocab_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "artifact_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sequence_length": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "vocab_size": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "splits": {
+      "type": "object",
+      "required": [
+        "train",
+        "search_val",
+        "audit_val"
+      ],
+      "additionalProperties": true
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "search_space": {
+      "type": "object",
+      "required": [
+        "module",
+        "profile"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "allowed_device_profiles",
+        "preferred_dtype",
+        "backend_policy"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "allowed_device_profiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preferred_dtype": {
+          "type": "string"
+        },
+        "backend_policy": {
+          "type": "string"
+        }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "required": [
+        "name",
+        "source",
+        "target_metric",
+        "notes"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target_metric": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

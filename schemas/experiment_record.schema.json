@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExperimentRecord",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "experiment_id",
+    "campaign_id",
+    "lane",
+    "status",
+    "budget_seconds",
+    "primary_metric_name",
+    "primary_metric_value",
+    "train_seconds",
+    "eval_seconds",
+    "tokens_processed",
+    "tokens_per_second",
+    "peak_vram_gb",
+    "backend",
+    "device_profile",
+    "seed",
+    "config_fingerprint",
+    "git_commit",
+    "summary_version"
+  ],
+  "properties": {
+    "experiment_id": {
+      "type": "string"
+    },
+    "proposal_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "campaign_id": {
+      "type": "string"
+    },
+    "lane": {
+      "type": "string",
+      "enum": [
+        "scout",
+        "main",
+        "confirm"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "failed",
+        "discarded",
+        "promoted"
+      ]
+    },
+    "disposition": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "crash_class": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "proposal_family": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "baseline",
+        "exploit",
+        "ablation",
+        "combine",
+        "novel",
+        "manual",
+        null
+      ]
+    },
+    "proposal_kind": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "structured",
+        "code_patch",
+        "manual",
+        null
+      ]
+    },
+    "complexity_cost": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 9
+    },
+    "primary_metric_name": {
+      "type": "string"
+    },
+    "primary_metric_value": {
+      "type": "number"
+    },
+    "metric_delta": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "budget_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "train_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "eval_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "compile_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tokens_processed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tokens_per_second": {
+      "type": "number",
+      "minimum": 0
+    },
+    "steady_state_mfu": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "peak_vram_gb": {
+      "type": "number",
+      "minimum": 0
+    },
+    "param_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "backend": {
+      "type": "string"
+    },
+    "device_profile": {
+      "type": "string"
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "config_fingerprint": {
+      "type": "string"
+    },
+    "git_commit": {
+      "type": "string"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "checkpoint_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "summary_version": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ended_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

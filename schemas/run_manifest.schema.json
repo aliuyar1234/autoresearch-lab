@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_id",
+    "experiment_id",
+    "campaign_id",
+    "lane",
+    "seed",
+    "created_at",
+    "working_directory",
+    "run_command",
+    "parent_commit",
+    "device_profile",
+    "backend",
+    "artifact_root",
+    "time_budget_seconds"
+  ],
+  "properties": {
+    "manifest_id": {
+      "type": "string"
+    },
+    "experiment_id": {
+      "type": "string"
+    },
+    "proposal_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "campaign_id": {
+      "type": "string"
+    },
+    "lane": {
+      "type": "string",
+      "enum": [
+        "scout",
+        "main",
+        "confirm"
+      ]
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "working_directory": {
+      "type": "string"
+    },
+    "run_command": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "parent_commit": {
+      "type": "string"
+    },
+    "device_profile": {
+      "type": "string"
+    },
+    "backend": {
+      "type": "string"
+    },
+    "artifact_root": {
+      "type": "string"
+    },
+    "time_budget_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "campaign_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "proposal_family": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "baseline",
+        "exploit",
+        "ablation",
+        "combine",
+        "novel",
+        "manual",
+        null
+      ]
+    },
+    "proposal_kind": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "structured",
+        "code_patch",
+        "manual",
+        null
+      ]
+    },
+    "config_fingerprint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "checkpoint_policy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pre_eval_checkpoint_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pre_eval_meta_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "replay_source_experiment_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "summary_target_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "env_capture": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

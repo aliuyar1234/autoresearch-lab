@@ -1,0 +1,24 @@
+{
+  "experiment_id": "exp_20260309_180000_0001",
+  "created_at": "2026-03-09T18:00:01Z",
+  "artifacts": [
+    {
+      "kind": "manifest",
+      "relative_path": "manifest.json",
+      "sha256": "deadbeef",
+      "size_bytes": 512,
+      "retention_class": "full",
+      "content_type": "application/json",
+      "created_at": "2026-03-09T18:00:01Z"
+    },
+    {
+      "kind": "summary",
+      "relative_path": "summary.json",
+      "sha256": "beadfeed",
+      "size_bytes": 1024,
+      "retention_class": "full",
+      "content_type": "application/json",
+      "created_at": "2026-03-09T18:01:31Z"
+    }
+  ]
+}

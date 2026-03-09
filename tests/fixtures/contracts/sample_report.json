@@ -1,0 +1,23 @@
+{
+  "campaign_id": "base_2k",
+  "report_date": "2026-03-09",
+  "device_profile": "rtx_pro_6000_96gb",
+  "run_count": 12,
+  "successful_count": 10,
+  "promoted_count": 2,
+  "failed_count": 2,
+  "top_outcomes": [
+    {
+      "experiment_id": "exp_20260309_180000_0001",
+      "proposal_id": "p_base_2k_0001",
+      "proposal_family": "exploit",
+      "proposal_kind": "structured",
+      "primary_metric_name": "val_bpb",
+      "primary_metric_value": 0.971234,
+      "delta_vs_previous_champion": -0.000512
+    }
+  ],
+  "recommendations": [
+    "Exploit region: `optimizer_groups.embed_lr_scale` helped in 2 recent runs and deserves local neighborhood search."
+  ]
+}

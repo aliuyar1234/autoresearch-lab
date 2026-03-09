@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0",
+  "updated_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "phase": "phase-name",
+  "scores": {
+    "repo_knowledge_store": 0,
+    "runner_orchestration": 0,
+    "experiment_ledger": 0,
+    "artifact_hygiene": 0,
+    "campaign_system": 0,
+    "data_pipeline": 0,
+    "evaluation_rigor": 0,
+    "scheduler_archive": 0,
+    "dense_search_surface": 0,
+    "reporting": 0,
+    "reliability_recovery": 0,
+    "security_boundaries": 0,
+    "testing": 0,
+    "documentation_quality": 0
+  },
+  "notes": "Update after each phase."
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ArtifactIndex",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "experiment_id",
+    "created_at",
+    "artifacts"
+  ],
+  "properties": {
+    "experiment_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "relative_path",
+          "retention_class",
+          "content_type",
+          "created_at"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "relative_path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "retention_class": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

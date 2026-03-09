@@ -57,6 +57,7 @@ dependencies = [
     { name = "rustbpe" },
     { name = "tiktoken" },
     { name = "torch" },
+    { name = "triton-windows", marker = "sys_platform == 'win32'" },
 ]
 
 [package.metadata]
@@ -70,6 +71,7 @@ requires-dist = [
     { name = "rustbpe", specifier = ">=0.1.0" },
     { name = "tiktoken", specifier = ">=0.11.0" },
     { name = "torch", specifier = "==2.9.1", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "triton-windows", marker = "sys_platform == 'win32'", specifier = "==3.5.1.post22" },
 ]
 
 [[package]]
@@ -2052,6 +2054,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a4/e6/c595c35e5c50c4bc56a7bac96493dad321e9e29b953b526bbbe20f9911d0/triton-3.5.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d0637b1efb1db599a8e9dc960d53ab6e4637db7d4ab6630a0974705d77b14b60", size = 170480488, upload-time = "2025-11-11T17:41:18.222Z" },
     { url = "https://files.pythonhosted.org/packages/41/1e/63d367c576c75919e268e4fbc33c1cb33b6dc12bb85e8bfe531c2a8bd5d3/triton-3.5.1-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:8932391d7f93698dfe5bc9bead77c47a24f97329e9f20c10786bb230a9083f56", size = 160073620, upload-time = "2025-11-11T17:52:18.403Z" },
     { url = "https://files.pythonhosted.org/packages/16/b5/b0d3d8b901b6a04ca38df5e24c27e53afb15b93624d7fd7d658c7cd9352a/triton-3.5.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:bac7f7d959ad0f48c0e97d6643a1cc0fd5786fe61cb1f83b537c6b2d54776478", size = 170582192, upload-time = "2025-11-11T17:41:23.963Z" },
+]
+
+[[package]]
+name = "triton-windows"
+version = "3.5.1.post22"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/21/2c1b90e7d42b0d85a71ab7155c9b360b947804762dddf33be6a817e8ba60/triton_windows-3.5.1.post22-cp310-cp310-win_amd64.whl", hash = "sha256:0479a5963f78b2d75a3bf51ceb29a7a370ada96a684889f66922b70dc73403a0", size = 46460455, upload-time = "2025-12-07T06:31:48.904Z" },
+    { url = "https://files.pythonhosted.org/packages/25/29/af20363e721827badffa6d60dbffdf24abfa444e9c5a638ecfad14d9206d/triton_windows-3.5.1.post22-cp311-cp311-win_amd64.whl", hash = "sha256:b1ecd253c0c35f87e619cf21d89f8c83a3d24607003e931347238ea8fe9ec55f", size = 46461443, upload-time = "2025-12-07T06:32:05.732Z" },
+    { url = "https://files.pythonhosted.org/packages/de/3f/bd4363f7537cc96d851e75e778dbffe25b77c0669f3bfaccca497ded2d28/triton_windows-3.5.1.post22-cp312-cp312-win_amd64.whl", hash = "sha256:ca65b4296640b99ba9acc350dd01a82b1b33458051fe271685153f45f75fb98f", size = 46465501, upload-time = "2025-12-07T06:32:22.689Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/5c/d9bfed41ee7f545e1204c6e2c0d8179d1fa206fcfe837ccbee64f8439405/triton_windows-3.5.1.post22-cp313-cp313-win_amd64.whl", hash = "sha256:8c6dec40821afc7f83fa9f5cffbd66a3b380f4cdc1507b9dc360de1c29fa470e", size = 46464270, upload-time = "2025-12-07T06:32:40.396Z" },
+    { url = "https://files.pythonhosted.org/packages/15/a4/52206560c9a5d17204316658cc7a61d251cd6113f0c2a399babcaf35a5ad/triton_windows-3.5.1.post22-cp314-cp314-win_amd64.whl", hash = "sha256:485a7d7c4fe96c63244124fc34e7b75cd22ba7506c3770b76978b5a9e7b01529", size = 47625330, upload-time = "2025-12-07T06:32:57.457Z" },
 ]
 
 [[package]]

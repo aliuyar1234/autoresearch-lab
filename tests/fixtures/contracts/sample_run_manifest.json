@@ -1,0 +1,22 @@
+{
+  "manifest_id": "manifest_exp_20260309_180000_0001",
+  "experiment_id": "exp_20260309_180000_0001",
+  "proposal_id": "p_base_2k_0001",
+  "campaign_id": "base_2k",
+  "lane": "scout",
+  "seed": 42,
+  "created_at": "2026-03-09T18:00:01Z",
+  "working_directory": "/repo",
+  "run_command": ["python", "-m", "research.dense_gpt.train"],
+  "parent_commit": "deadbeef",
+  "device_profile": "rtx_pro_6000_96gb",
+  "backend": "flash_attention",
+  "artifact_root": "artifacts/runs/exp_20260309_180000_0001",
+  "time_budget_seconds": 90,
+  "checkpoint_policy": "pre_eval_if_eligible",
+  "summary_target_path": "artifacts/runs/exp_20260309_180000_0001/summary.json",
+  "env_capture": {
+    "python_version": "3.10",
+    "cuda_visible_devices": "0"
+  }
+}

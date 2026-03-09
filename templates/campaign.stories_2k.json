@@ -1,0 +1,113 @@
+{
+  "campaign_id": "stories_2k",
+  "version": "1.1.0",
+  "title": "TinyStories 2k campaign",
+  "description": "Fast secondary campaign with lighter data and more readable qualitative probes.",
+  "active": true,
+  "comparability_group": "stories_2k",
+  "primary_metric": {
+    "name": "val_bpb",
+    "direction": "min",
+    "report_precision": 6,
+    "tie_threshold": 0.0003
+  },
+  "budgets": {
+    "scout_seconds": 60,
+    "main_seconds": 240,
+    "confirm_seconds": 900,
+    "replication_seeds": [
+      42
+    ],
+    "confirm_mode": "longer_budget"
+  },
+  "dataset": {
+    "source": "karpathy/tinystories-gpt4-clean",
+    "format": "text",
+    "builder": "lab.campaigns.builders.stories_2k",
+    "trust_model": "public_hf_dataset+local_hash_manifest",
+    "raw_cache_root": "artifacts/cache/raw/tinystories-gpt4-clean",
+    "sampling_policy": "deterministic_hash_partition"
+  },
+  "tokenizer": {
+    "kind": "bpe",
+    "vocab_size": 4096,
+    "artifact_files": [
+      "tokenizer.json",
+      "merges.txt",
+      "tokenizer.meta.json"
+    ]
+  },
+  "sequence_length": 2048,
+  "vocab_size": 4096,
+  "splits": {
+    "train": {
+      "selector": "deterministic_hash_partition",
+      "seed": 1337,
+      "modulus": 1000,
+      "exclude_partitions": [
+        997,
+        998,
+        999
+      ]
+    },
+    "search_val": {
+      "selector": "deterministic_hash_partition",
+      "seed": 1337,
+      "modulus": 1000,
+      "partition": 999,
+      "token_budget": 4194304
+    },
+    "audit_val": {
+      "selector": "deterministic_hash_partition",
+      "seed": 1337,
+      "modulus": 1000,
+      "partition": 998,
+      "token_budget": 2097152
+    },
+    "locked_val": {
+      "selector": "deterministic_hash_partition",
+      "seed": 1337,
+      "modulus": 1000,
+      "partition": 997,
+      "token_budget": 2097152
+    }
+  },
+  "assets": {
+    "root": "artifacts/cache/campaigns/stories_2k",
+    "tokenizer_manifest": "tokenizer.manifest.json",
+    "pretok_manifest": "pretok.manifest.json",
+    "packed_manifest": "packed.manifest.json"
+  },
+  "search_space": {
+    "module": "research.dense_gpt.search_space",
+    "profile": "stories_2k"
+  },
+  "promotion": {
+    "scout_to_main_min_delta": 0.0005,
+    "main_to_confirm_min_delta": 0.0004,
+    "champion_min_delta": 0.0003,
+    "allow_complexity_tie_break": true
+  },
+  "retention": {
+    "discarded": "summary+logs_only",
+    "promoted": "full_artifacts",
+    "champion": "full_artifacts_plus_archive",
+    "crash": "summary+logs+exemplar"
+  },
+  "runtime": {
+    "allowed_device_profiles": [
+      "rtx_pro_6000_96gb",
+      "generic_single_gpu_nvidia"
+    ],
+    "preferred_dtype": "bfloat16",
+    "backend_policy": "benchmark_and_cache",
+    "compile_cache_policy": "by_device_profile+shape_family+backend",
+    "max_peak_vram_gb": 92
+  },
+  "baseline": {
+    "name": "stories_dense_seed",
+    "source": "campaign_local_baseline",
+    "target_metric": "campaign-local leaderboard baseline",
+    "notes": "Use for faster iteration and qualitative probes."
+  }
+}

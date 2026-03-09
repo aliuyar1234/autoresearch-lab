@@ -1,0 +1,26 @@
+{
+  "proposal_id": "p_base_2k_0001",
+  "campaign_id": "base_2k",
+  "lane": "scout",
+  "family": "exploit",
+  "kind": "structured",
+  "status": "queued",
+  "created_at": "2026-03-09T18:00:00Z",
+  "generator": "scheduler",
+  "parent_ids": ["exp_20260309_120000_0001"],
+  "hypothesis": "Slightly increase embedding LR while holding other groups fixed.",
+  "rationale": "Recent near-misses suggest embeddings are under-updated relative to the rest of the network.",
+  "config_overrides": {
+    "optimizer_groups": {
+      "embed_lr_scale": 1.25
+    }
+  },
+  "complexity_cost": 1,
+  "expected_direction": "improve",
+  "tags": ["embed_lr", "exploit"],
+  "novelty_reason": null,
+  "notes": null,
+  "guardrails": {
+    "max_peak_vram_gb": 92
+  }
+}
