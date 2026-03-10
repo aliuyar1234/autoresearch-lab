@@ -4,113 +4,34 @@
 
 Autoresearch Lab is a local, single-GPU, CUDA-first, dense-model research lab built on top of Andrej Karpathy's [`autoresearch`](https://github.com/karpathy/autoresearch).
 
-It keeps the original spirit of "let the machine search overnight on a real training loop", but it is no longer a minimal hill-climber. It is a structured lab with campaigns, explicit evaluation splits, a validation ladder, evidence-traced memory, runtime autotune, code-lane round trips, morning reports, and a reproducible public showcase pipeline.
+It keeps the original "run real training loops overnight" spirit, but adds the parts a serious lab needs: campaigns, SQLite state, explicit evaluation splits, validation reviews, evidence-traced memory, runtime autotune, code-lane round trips, reports, recovery tooling, and a reproducible showcase path.
 
-**In one sentence: Autoresearch Lab is a single-GPU, CUDA-first, dense-model research lab with validated champions, evidence memory, and operator-grade workflows.**
+## What It Is
 
-## Current State
+- single GPU only
+- CUDA first
+- dense-model first
+- local artifacts and local SQLite control plane
+- validated champions, not raw search winners
+- stable lab layer plus hackable research surface
 
-This repo is past the "interesting prototype" stage. The current system includes:
+The main boundary is:
 
-- multi-file SQL migrations and a SQLite control plane
-- campaign-aware dataset and split management
-- structured proposal generation with archive-aware scheduling
-- explicit `search_val`, `audit_val`, and `locked_val` evaluation behavior
-- a real validation ladder so raw wins do not promote directly
-- evidence-traced memory with citation coverage and repeated-dead-end tracking
-- runtime-only autotune overlays cached by lane, backend, and device profile
-- evidence-grounded code proposal export/import
-- unattended `night` sessions with report bundles in the morning
-- a scriptable remembering-vs-amnesiac showcase pipeline
-- final signoff docs and a lightweight signoff script
+- stable lab infrastructure in `lab/`, `campaigns/`, `schemas/`, `sql/`
+- mutable research surface in `research/dense_gpt/`, `train.py`, and code proposals
 
-## What Makes It Different
+## Current Capabilities
 
-This repo is not just "edit `train.py` and hope."
-
-It separates the project into two layers:
-
-### Stable lab layer
-
-The stable lab layer is the operating system of the repo:
-
-- `lab/`
-- `campaigns/`
-- `schemas/`
-- `sql/`
-- `docs/`
-- `showcase/`
-
-This is where the runner, ledger, reports, scheduler, validation, memory, and reliability logic live.
-
-### Mutable research surface
-
-The mutable research surface is where the actual research changes happen:
-
-- `research/dense_gpt/`
-- `train.py`
-- campaign-specific config/search knobs
-- code proposal packs
-
-This boundary is deliberate: the lab should stay trustworthy while the model surface stays hackable.
-
-## Validated Champions, Not Raw Search Wins
-
-One of the most important repo-level rules is that a promising search result is not the same thing as a validated champion.
-
-- search runs can produce strong raw candidates
-- strong candidates can become `pending_validation`
-- `python -m lab.cli validate --experiment <id> --mode confirm` is the promotion gate
-- only passed validation reviews count as promoted champions
-
-That distinction shows up in the ledger, reports, and public showcase story.
-
-## Showcase
-
-The flagship showcase is `The Remembering Scientist`.
-
-The public-facing materials live in:
-
-- [SHOWCASE.md](SHOWCASE.md)
-- [showcase/the-remembering-scientist/README.md](showcase/the-remembering-scientist/README.md)
-
-Historical notes live under `docs/archive/` and `showcase/the-remembering-scientist/archive/`.
-
-The core claim is simple:
-
-`Same GPU. Same campaign. Same budget. The only difference was memory.`
-
-The showcase pipeline can:
-
-- freeze a historical memory snapshot
-- run remembering-vs-amnesiac A/B pairs with isolated roots
-- generate confirm, audit, and replay artifacts
-- render figure-input JSON and a case-study draft from stored outputs
-
-## Core Workflow
-
-The everyday operator loop is:
-
-```bash
-python -m lab.cli bootstrap
-python -m lab.cli preflight
-python -m lab.cli campaign build --campaign base_2k
-python -m lab.cli run --campaign base_2k --generate structured --lane scout
-python -m lab.cli night --campaign base_2k --hours 8 --allow-confirm
-python -m lab.cli report --campaign base_2k
-python -m lab.cli doctor
-python -m lab.cli cleanup --dry-run
-```
-
-What that gives you:
-
-- reproducible campaign assets
-- durable run artifacts under `artifacts/`
-- ledger state in SQLite
-- scheduler-selected proposals instead of manual guessing
-- explicit validation state for raw wins versus promoted champions
-- memory citations, repeated-dead-end metrics, and validation pass rate in reports
-- a report bundle you can read in the morning
+- multi-file SQL migrations
+- campaign-aware asset building and split management
+- explicit `search_val`, `audit_val`, and `locked_val`
+- confirm/audit validation ladder
+- evidence-traced memory and retrieval lineage
+- archive-aware scheduler with repeated-dead-end tracking
+- runtime-only autotune overlays
+- code proposal export/import with lineage preserved
+- unattended `night` sessions with morning reports
+- remembering-vs-amnesiac showcase automation
 
 ## Quick Start
 
@@ -119,8 +40,6 @@ Requirements:
 - one NVIDIA GPU
 - Python 3.10+
 - [`uv`](https://docs.astral.sh/uv/)
-
-Recommended setup:
 
 ```bash
 uv sync
@@ -134,49 +53,14 @@ python -m lab.cli doctor
 python -m lab.cli cleanup --dry-run
 ```
 
-After the first build, rerun `python -m lab.cli preflight --campaign base_2k` when you want campaign-specific asset checks. If a run looks promising, validate it before treating it as a champion:
+If a run looks promising, validate it before treating it as a champion:
 
 ```bash
 python -m lab.cli validate --experiment <experiment_id> --mode confirm
 python -m lab.cli validate --experiment <experiment_id> --mode audit
 ```
 
-Optional tools that stay off the common path:
-
-- `python -m lab.cli autotune --campaign base_2k --all-lanes`
-- `python -m lab.cli inspect --campaign base_2k`
-- `python -m lab.cli smoke --gpu`
-
-## Code Lane
-
-When structured search is not enough, the lab can open a code lane:
-
-```bash
-python -m lab.cli export-code-proposal --proposal-id <proposal_id>
-python -m lab.cli import-code-proposal --proposal-id <proposal_id> --patch-path path\to\returned.patch
-python -m lab.cli run --proposal-id <proposal_id>
-```
-
-The exported pack includes:
-
-- proposal json
-- task summary
-- local contracts
-- acceptance criteria
-- evidence citations
-- validation targets
-- concise proposal context
-- exact target files
-- return instructions
-
-Current direct import support accepts:
-
-- patch files
-- worktree paths
-
-Imported code proposals execute from an isolated snapshot under `.worktrees/` and then flow through the same runner, memory, scoring, archive, and report path as structured proposals.
-
-## Important Commands
+## Main Commands
 
 Common path:
 
@@ -204,14 +88,48 @@ Advanced:
 - `python -m lab.cli memory inspect`
 - `python -m lab.cli smoke --gpu`
 
-Optional code lane:
+## Code Lane
 
-- `python -m lab.cli export-code-proposal`
-- `python -m lab.cli import-code-proposal`
+When structured search is not enough:
 
-## If You Want The Original Minimal Path
+```bash
+python -m lab.cli export-code-proposal --proposal-id <proposal_id>
+python -m lab.cli import-code-proposal --proposal-id <proposal_id> --patch-path path\to\returned.patch
+python -m lab.cli run --proposal-id <proposal_id>
+```
 
-The upstream-style baseline path is still here:
+The exported pack includes:
+
+- proposal json
+- task summary
+- local contracts
+- acceptance criteria
+- evidence citations
+- validation targets
+- concise proposal context
+- exact target files
+- return instructions
+
+Imported code proposals execute from an isolated snapshot under `.worktrees/` and then flow through the same runner, scoring, archive, memory, and report path as structured proposals.
+
+## Showcase
+
+The flagship showcase is `The Remembering Scientist`.
+
+Core claim:
+
+`Same GPU. Same campaign. Same budget. The only intended difference is memory.`
+
+Start here:
+
+- [SHOWCASE.md](SHOWCASE.md)
+- [showcase/the-remembering-scientist/README.md](showcase/the-remembering-scientist/README.md)
+
+Historical notes live under `docs/archive/` and `showcase/the-remembering-scientist/archive/`.
+
+## Upstream Baseline
+
+The minimal upstream-style path is still here:
 
 ```bash
 uv run prepare.py
@@ -220,7 +138,9 @@ uv run train.py
 
 That is useful for sanity checks and baseline parity work.
 
-## Docs To Read First
+## Docs
+
+Read these first:
 
 - `AGENTS.md`
 - `ARCHITECTURE.md`
@@ -230,17 +150,6 @@ That is useful for sanity checks and baseline parity work.
 - `SHOWCASE.md`
 - `docs/product-specs/acceptance-matrix.md`
 - `docs/product-specs/ten-of-ten-signoff.md`
-- `showcase/the-remembering-scientist/README.md`
-
-## Relationship To Upstream
-
-This project is best understood as:
-
-- inspired by Karpathy's `autoresearch`
-- still single-GPU and dense-model focused
-- intentionally much more structured and operational
-
-If upstream is the seed idea, this repo is the "make it into a serious local lab" version.
 
 ## License
 
