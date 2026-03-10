@@ -32,8 +32,9 @@ It is a local research lab with strong internal structure.
                                 v
 +-------------------------------------------------------------+
 | lab.cli                                                     |
-|  bootstrap | preflight | campaign | run | night | report    |
-|  inspect | replay | export-code-proposal | score | cleanup  |
+|  bootstrap | preflight | campaign | run | validate | noise  |
+|  autotune | night | report | inspect | replay | memory      |
+|  export/import-code-proposal | score | doctor | cleanup     |
 +-------------------------------+-----------------------------+
                                 |
                                 v
@@ -84,6 +85,7 @@ reference_impl/
 lab/
 research/
 campaigns/
+showcase/
 tests/
 artifacts/        (gitignored)
 .worktrees/       (gitignored)
@@ -155,6 +157,10 @@ The lab persists these first-class objects:
 - campaigns
 - proposals
 - experiments
+- validation reviews
+- memory records
+- retrieval events
+- proposal evidence links
 - artifacts
 - champions
 - daily reports
@@ -166,6 +172,7 @@ The lab persists these first-class objects:
 These are hard invariants:
 
 - runner decisions use structured data
+- SQL migrations are additive files under `sql/` and are applied in tracked order
 - campaign manifests are explicit
 - experiment ids are created before execution
 - artifacts are append-only per experiment
@@ -173,6 +180,10 @@ These are hard invariants:
 - mainline repo remains clean during proposal execution
 - campaign comparability is never inferred implicitly
 - proposal family and proposal kind remain separate
+- `eval_split` and `run_purpose` are explicit execution fields, not guessed from lane names
+- raw search wins do not become champions directly; passed validation reviews are the promotion gate
+- runtime autotune overlays affect execution only and do not change scientific identity
+- proposal evidence, retrieval lineage, and negative-memory signals are durable lab state
 - raw logs do not drive promotion or scheduling
 
 ## Why SQLite
@@ -200,6 +211,7 @@ Worktrees provide:
 
 The user wants an answer in the morning, not a platform to administrate.
 Static Markdown or HTML reports are enough for v1 and likely better.
+They can surface memory citation coverage, repeated-dead-end metrics, validation outcomes, and showcase artifacts without adding a second platform.
 
 ## What to read next
 

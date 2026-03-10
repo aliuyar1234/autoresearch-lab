@@ -12,9 +12,11 @@ Read them in order:
 6. `metrics-protocol.md`
 7. `device-profiles.md`
 8. `code-lane-pack.md`
-9. `reporting.md`
-10. `test-matrix.md`
-11. `acceptance-matrix.md`
+9. `code-lane-evidence-contract.md`
+10. `reporting.md`
+11. `test-matrix.md`
+12. `acceptance-matrix.md`
+13. `ten-of-ten-signoff.md`
 
 ## How to use these specs
 

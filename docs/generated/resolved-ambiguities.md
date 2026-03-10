@@ -78,6 +78,24 @@ Resolution:
 - current direct import support accepts `--patch-path` and `--worktree-path`
 - imported code proposals execute from an isolated snapshot under `.worktrees/`, while main repo state remains untouched
 
+### A12 - Promotion requires validation, not just a strong confirm run
+Reason:
+Earlier docs and mental models could still be read as if a strong confirm-lane result promoted directly.
+
+Resolution:
+- raw search outcomes and validated champions are distinct states
+- candidates may remain `pending_validation`
+- only passed validation reviews count as promoted champions
+
+### A13 - Runtime autotune changes execution overlays only
+Reason:
+Autotune introduces runtime variability, but the repo still needs scientific identity to remain comparable.
+
+Resolution:
+- autotune may choose runtime-only overlays such as batch sizes or compile enablement
+- scientific identity remains tied to the proposal and resolved scientific config
+- manifests and reports must surface both runtime overlay and effective runtime settings explicitly
+
 ## How to extend this file
 
 Append entries in this format:

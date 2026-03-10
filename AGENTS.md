@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repository is being evolved into **Autoresearch Lab**: a real single-GPU research lab built on top of Karpathy's minimal `autoresearch` concept.
+This repository is **Autoresearch Lab**: a real single-GPU research lab built on top of Karpathy's minimal `autoresearch` concept.
 
 ## Mission
 
@@ -14,7 +14,7 @@ Build a local, CUDA-first research system that:
 
 ## Product target in one sentence
 
-**A single-GPU, dense-model, campaign-aware, artifact-rich research lab with a real runner, real memory, real scheduling, and real reporting.**
+**A single-GPU, dense-model, campaign-aware, artifact-rich research lab with validated champions, evidence-traced memory, runtime autotune, and real reporting.**
 
 ## Hard constraints
 
@@ -50,6 +50,11 @@ These are non-negotiable unless a phase doc explicitly changes them.
    - runner must consume structured artifacts
    - no grep-driven control path
    - raw logs are for humans and debugging, not for primary control flow
+
+7. **Validated champions only**
+   - raw search wins are not public proof
+   - strong candidates may be `pending_validation`
+   - only passed validation reviews count as promoted champions
 
 ## Proposal model
 
@@ -118,10 +123,13 @@ It means:
 - real runner and resume behavior
 - real experiment database
 - real archive and scheduler
-- real multi-budget evaluation
+- real multi-split evaluation and validation review
 - real campaign support
 - real artifact hygiene
+- real evidence citations and repeated-dead-end accounting
+- real runtime autotune
 - real reports
+- real showcase automation
 - real failure recovery
 - a better search engine
 - richer dense-model search space
@@ -155,14 +163,14 @@ Every design choice should pass these filters:
 
 Implement in this order only:
 
-1. Foundation and knowledge store
-2. Runner + ledger + artifacts
-3. Data pipeline + campaign assets
-4. Evaluation ladder + promotion rules
-5. Scheduler + archive + proposal system
-6. Dense-model search surface
-7. Campaigns + reporting
-8. Reliability + cleanup + polish
+1. Phase 0 - migration substrate
+2. Phase 1 - scientific correctness: eval splits + validation ladder
+3. Phase 2 - evidence-traced memory
+4. Phase 3 - compositional scheduler + negative memory
+5. Phase 4 - RTX PRO 6000 runtime autotune
+6. Phase 5 - evidence-grounded code lane
+7. Phase 6 - flagship showcase automation
+8. Phase 7 - identity cleanup + final signoff
 
 ## Required delivery discipline
 
@@ -192,13 +200,20 @@ Do not ask the human for clarification unless the repo or environment is genuine
 
 The project is done when:
 
+- multi-file migrations are the normal path, not a one-off bootstrap artifact
 - the original baseline can be reproduced as a campaign
 - the lab can run structured proposals without human babysitting
+- raw search wins are distinguishable from passed validation reviews
+- explicit `search_val`, `audit_val`, and `locked_val` behavior exists in code and reports
+- proposals can carry evidence citations and retrieval lineage
 - code-level proposals can be exported and imported cleanly
+- runtime autotune can choose execution overlays without changing scientific identity
 - experiments are fully recorded in SQLite + artifacts
 - overnight runs generate a morning report
+- reports surface memory citation coverage, repeated-dead-end rate, and validation pass rate
 - champions and near-misses are preserved in an archive
 - crashes are classified and recoverable
+- the remembering-scientist showcase can run from code
 - the repo remains compact and understandable
 - the lab is actually useful on a single GPU workstation
 

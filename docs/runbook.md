@@ -1,19 +1,12 @@
 # Runbook
 
-This runbook is the operator guide for Autoresearch Lab.
+This runbook is the operator guide for Autoresearch Lab as it exists now.
 
 ## 1. Bootstrap a fresh clone
 
 ```bash
 git clone https://github.com/aliuyar1234/autoresearch.git autoresearch-lab
 cd autoresearch-lab
-git remote add upstream https://github.com/karpathy/autoresearch.git
-git fetch upstream
-```
-
-Copy the overlay from this pack into the repo root, then:
-
-```bash
 uv sync
 python -m lab.cli bootstrap
 python -m lab.cli preflight --campaign base_2k --benchmark-backends
@@ -23,160 +16,182 @@ python tools/spec_lint.py
 ```
 
 Expected outcome:
+
 - managed roots created
-- SQLite initialized
-- machine/environment summary printed
-- Windows venv includes `triton-windows` so `torch.compile` is available in the repo env
-- `smoke --gpu` builds tiny real campaign assets under `artifacts/smoke/` when needed
+- SQLite initialized and all `sql/*.sql` migrations applied in order
+- machine and environment summary printed
+- optional backend benchmarks cached when requested
 - `doctor` reports no retained-artifact or DB-integrity errors
 - spec lint passes
 
-## 2. Verify baseline before major refactor
+## 2. Understand state roots and migrations
 
-If the baseline path still exists:
+Important paths:
 
-```bash
-uv run prepare.py
-uv run train.py
-```
+- ledger: `lab.sqlite3` by default, or `--db-path`
+- artifacts: `artifacts/` by default, or `--artifacts-root`
+- worktrees: `.worktrees/` by default, or `--worktrees-root`
+- runtime cache: `artifacts/cache/` by default, or `--cache-root`
 
-Goal:
-- confirm the workstation and dependencies are healthy
-- establish confidence before deeper migration
+Migration behavior:
+
+- commands apply all SQL files under `sql/` lexicographically
+- applied versions are tracked in `schema_migrations`
+- directory-mode migrations are the normal operating mode, not a bootstrap-only special case
 
 ## 3. Build campaign assets
 
 ```bash
 python -m lab.cli campaign list
+python -m lab.cli campaign show --campaign base_2k
 python -m lab.cli campaign build --campaign base_2k
 python -m lab.cli campaign verify --campaign base_2k
 ```
 
 Expected outputs:
+
 - tokenizer assets
 - pretokenized shards
 - packed blocks
 - integrity manifests
+- explicit `search_val`, `audit_val`, and `locked_val` split definitions
 
-## 4. Run one structured scout experiment
+## 4. Warm runtime autotune
+
+```bash
+python -m lab.cli autotune --campaign base_2k --all-lanes
+```
+
+What it does:
+
+- probes runtime-only settings such as device batch size, eval batch size, and compile enablement
+- caches winners by campaign, lane, backend, and device profile
+- preserves scientific identity while changing only execution overlays
+
+## 5. Run one structured experiment
 
 ```bash
 python -m lab.cli run --campaign base_2k --generate structured --lane scout
+python -m lab.cli inspect --experiment <experiment_id>
+python -m lab.cli score --experiment <experiment_id>
 ```
 
 Look for:
+
 - experiment id
 - proposal family and kind
-- resolved `config.json` under the run artifact root
-- artifact path
+- resolved `config.json` and `manifest.json`
+- runtime overlay and autotune metadata
 - terminal summary status
-- primary metric in summary
+- primary metric, validation state, and disposition
 
-## 5. Run a bounded overnight session
+## 6. Validate a promising candidate
+
+Strong search results are not automatically champions.
+
+```bash
+python -m lab.cli validate --experiment <experiment_id> --mode confirm
+python -m lab.cli validate --experiment <experiment_id> --mode audit
+```
+
+Look for:
+
+- confirm and audit review records in SQLite
+- replay experiment ids
+- median candidate and comparator metrics
+- `pending_validation` turning into `promoted` only after confirm passes
+
+To estimate baseline noise:
+
+```bash
+python -m lab.cli noise --campaign base_2k --lane scout --count 5
+```
+
+## 7. Run a bounded overnight session
 
 ```bash
 python -m lab.cli night --campaign base_2k --hours 8 --allow-confirm
+python -m lab.cli report --campaign base_2k
+python -m lab.cli inspect --campaign base_2k
 ```
 
 Expected outputs:
+
 - multiple experiment artifact directories
 - updated SQLite ledger
 - auto-resume of any proposals left in `running` state from a previous interrupted session
-- morning report bundle under `artifacts/reports/<date>/<campaign_id>/`
+- report bundle under `artifacts/reports/<date>/<campaign_id>/`
+- leaderboard, champion-card, crash summary, and report JSON/Markdown pairs
 
-## 5a. Preview or fill the structured queue
+The report should surface:
 
-```bash
-python -m lab.cli campaign queue --campaign base_2k --count 5
-python -m lab.cli campaign queue --campaign base_2k --count 5 --apply
-```
+- validated promotions, not just raw highs
+- memory citation coverage
+- repeated-dead-end rate
+- validation pass rate
+- recommendations and latest champion context
 
-Look for:
-- deterministic lane/family mix
-- no duplicate config fingerprints
-- queued proposals visible from `inspect --campaign`
-
-## 6. Inspect results
+## 8. Inspect or backfill memory
 
 ```bash
-python -m lab.cli inspect --campaign base_2k
-python -m lab.cli inspect --experiment <experiment_id>
-python -m lab.cli report --campaign base_2k
+python -m lab.cli memory inspect --campaign base_2k --limit 20
+python -m lab.cli memory backfill --campaign base_2k
 ```
 
-Look for:
-- archive buckets and current campaign state
-- top candidates
-- failure summary
-- recommended next actions
-- latest report, leaderboard, and champion-card artifact paths
+Use these when:
 
-## 7. Export a code proposal pack
+- older ledger state needs memory records generated retroactively
+- you want to inspect cited memories, retrieval events, and source kinds directly
+
+## 9. Export and import a code proposal pack
 
 Use this only when structured search is not enough.
 
 ```bash
 python -m lab.cli export-code-proposal --proposal-id <proposal_id>
+python -m lab.cli import-code-proposal --proposal-id <proposal_id> --patch-path path\\to\\returned.patch
+python -m lab.cli run --proposal-id <proposal_id>
 ```
 
-Current implementation expects a proposal whose `kind` is `code_patch`.
+The exported pack should include:
 
-The pack should include:
 - proposal json
 - target file list
 - base commit
 - acceptance criteria
-- concise context
+- `context/evidence.json`
+- `context/validation_targets.json`
+- `context/proposal_context.md`
 - return instructions
 
-Return path:
-- a returned patch or worktree is imported and run through the same runner and scoring path
+Current direct import support accepts:
 
-Import a returned patch or worktree:
+- patch files
+- worktree paths
 
-```bash
-python -m lab.cli import-code-proposal --proposal-id <proposal_id> --patch-path path\\to\\returned.patch
-```
+Imported code proposals execute from an isolated snapshot under `.worktrees/` and then flow through the same runner, memory, scoring, archive, and report path as structured proposals.
 
-or
+## 10. Run the showcase pipeline
 
-```bash
-python -m lab.cli import-code-proposal --proposal-id <proposal_id> --worktree-path path\\to\\returned_worktree
-```
-
-Then execute it through the same runner:
+The flagship showcase is scriptable:
 
 ```bash
-python -m lab.cli run --proposal-id <proposal_id>
+python showcase/the-remembering-scientist/freeze_memory_snapshot.py --campaign base_2k --source-db lab.sqlite3
+python showcase/the-remembering-scientist/run_ab_test.py --campaign base_2k --pairs 2 --hours 6
+python showcase/the-remembering-scientist/run_validations.py --campaign base_2k
+python showcase/the-remembering-scientist/render_case_study.py --campaign base_2k
 ```
 
-Current implementation imports patch files and worktree paths directly. Git-commit returns should be converted to a patch or worktree before import.
+Expected outputs:
 
-## 8. Diagnose common failures
+- frozen memory snapshot manifest
+- remembering and amnesiac pair roots
+- `compare.json` and `compare.md`
+- confirm, audit, and replay artifacts under `validations/`
+- figure-input JSON under `figures/`
+- `CASE_STUDY_DRAFT.md`
 
-### Preflight failure
-Action:
-- rerun `preflight --json`
-- run `doctor --json`
-- optionally rerun `preflight --benchmark-backends --campaign <id>`
-- fix missing assets or environment issues before queueing more runs
-
-### OOM during training
-Action:
-- inspect device batch, sequence length, backend, and compile path
-- scheduler should down-rank similar proposals automatically
-
-### OOM during eval
-Action:
-- confirm pre-eval checkpoint exists
-- rerun in confirm lane only if recovery path is defined
-
-### Import/compile failure
-Action:
-- inspect worktree diff or recent code proposal
-- retain crash exemplar for report and debugging
-
-## 9. Cleanup
+## 11. Cleanup and recovery
 
 Always start with dry-run:
 
@@ -191,6 +206,7 @@ python -m lab.cli cleanup --apply
 ```
 
 The cleanup command must never delete:
+
 - champion artifacts
 - promoted artifacts
 - reports
@@ -198,55 +214,50 @@ The cleanup command must never delete:
 - any path outside managed roots
 - crash exemplars for failed runs
 
-Current implementation prunes only `discardable` / `ephemeral` artifacts and refreshes `artifact_index.json` for touched runs.
-
-## 10. Resume after interruption
-
-Preferred flow:
-- rerun `python -m lab.cli night ...`
-- lab reconstructs queue/session state from SQLite + artifacts
-- partial progress remains visible in the next report
-- the next report includes session notes describing recovered or interrupted state
-
-Manual diagnostics:
+For interruption recovery:
 
 ```bash
 python -m lab.cli doctor --json
+python -m lab.cli night --campaign base_2k --hours 8 --allow-confirm
 ```
 
 Look for:
+
 - `missing_artifact`
 - `missing_report_artifact`
 - `proposal_still_running`
 - DB integrity errors
 
-## 11. Add a new structured knob
+## 12. Lightweight final signoff
 
-Checklist:
-1. add the knob to `research/dense_gpt/defaults.py`
-2. expose it in `research/dense_gpt/search_space.py`
-3. ensure `mutation_rules.py` can mutate it sanely
-4. include it in config fingerprinting
-5. update relevant tests
-6. update docs if the knob becomes an important public concept
+The lightweight signoff path is:
 
-## 12. Add a new campaign
+```bash
+python tools/ten_of_ten_signoff.py --json
+```
 
-Checklist:
-1. copy a template from `templates/`
-2. create `campaigns/<id>/campaign.json`
-3. create `campaigns/<id>/README.md`
-4. implement or extend builder under `lab/campaigns/builders/`
-5. run `campaign verify`
-6. do not mix leaderboards across incomparable campaigns
+That script intentionally avoids GPU-heavy end-to-end checks. It runs:
+
+- spec lint
+- lightweight CLI bootstrap and doctor checks in an isolated temp root
+- one report generation pass
+- a curated subset of roadmap tests
+
+The human-facing rubric lives in:
+
+- `docs/product-specs/acceptance-matrix.md`
+- `docs/product-specs/ten-of-ten-signoff.md`
 
 ## 13. Merge readiness checklist
 
-Before calling the lab “impressive”:
-- baseline parity path exists for `base_2k`
-- fake/integration tests pass
-- GPU smoke passes
-- overnight mini-session passes
+Before calling the lab "done enough to defend":
+
+- baseline parity path still exists for `base_2k`
+- fake and integration tests pass
+- GPU smoke passes on the target machine
+- validated champions are distinguishable from raw search wins
+- memory citations and repeated-dead-end metrics appear in reports
+- at least one code proposal pack can be exported and round-tripped
+- showcase automation runs from code
 - `doctor` returns clean output for the repo env
-- docs/specs/schemas are aligned
-- report is clear enough that a human would actually trust it
+- docs, specs, schemas, and the signoff matrix all match implementation reality

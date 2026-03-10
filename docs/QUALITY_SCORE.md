@@ -202,6 +202,23 @@ Update this after every phase.
 - Documentation quality: 4
 - Validation note: auto-resume from interrupted `running` proposals, conservative cleanup with artifact-index refresh, machine-readable `doctor` diagnostics, resumed-session report notes, dedicated GPU smoke CLI coverage, and code-lane export/import round-trip execution are now implemented and covered by tests.
 
+### Roadmap 8.6 -> 10 signoff snapshot
+- Repo knowledge store: 4
+- Runner / orchestration: 4
+- Experiment ledger: 4
+- Artifact hygiene: 4
+- Campaign system: 4
+- Data pipeline: 3
+- Evaluation rigor: 4
+- Scheduler / archive: 4
+- Dense search surface: 3
+- Reporting: 4
+- Reliability / recovery: 4
+- Security boundaries: 2
+- Testing: 4
+- Documentation quality: 4
+- Validation note: the current repo now includes versioned multi-file migrations, explicit eval-split validation reviews, evidence-traced memory, repeated-dead-end-aware scheduling, runtime autotune, evidence-grounded code packs, showcase automation, and a final lightweight signoff script.
+
 ## Exit target for v1
 
 The project reaches “real lab” status when:
