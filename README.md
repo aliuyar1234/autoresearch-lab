@@ -39,7 +39,6 @@ The stable lab layer is the operating system of the repo:
 - `schemas/`
 - `sql/`
 - `docs/`
-- `reference_impl/`
 - `showcase/`
 
 This is where the runner, ledger, reports, scheduler, validation, memory, and reliability logic live.
@@ -88,18 +87,17 @@ The showcase pipeline can:
 
 ## Core Workflow
 
-The main operator loop is:
+The everyday operator loop is:
 
 ```bash
 python -m lab.cli bootstrap
-python -m lab.cli preflight --campaign base_2k
+python -m lab.cli preflight
 python -m lab.cli campaign build --campaign base_2k
-python -m lab.cli autotune --campaign base_2k --all-lanes
 python -m lab.cli run --campaign base_2k --generate structured --lane scout
-python -m lab.cli validate --experiment <experiment_id> --mode confirm
 python -m lab.cli night --campaign base_2k --hours 8 --allow-confirm
 python -m lab.cli report --campaign base_2k
-python -m lab.cli inspect --campaign base_2k
+python -m lab.cli doctor
+python -m lab.cli cleanup --dry-run
 ```
 
 What that gives you:
@@ -125,31 +123,27 @@ Recommended setup:
 ```bash
 uv sync
 python -m lab.cli bootstrap
+python -m lab.cli preflight
 python -m lab.cli campaign build --campaign base_2k
-python -m lab.cli preflight --campaign base_2k --benchmark-backends
-python -m lab.cli smoke --gpu
-python -m lab.cli doctor
-python -m lab.cli autotune --campaign base_2k --all-lanes
-```
-
-Then run one structured experiment:
-
-```bash
 python -m lab.cli run --campaign base_2k --generate structured --lane scout
+python -m lab.cli night --campaign base_2k --hours 8 --allow-confirm
+python -m lab.cli report --campaign base_2k
+python -m lab.cli doctor
+python -m lab.cli cleanup --dry-run
 ```
 
-If a run looks promising, validate it before treating it as a champion:
+After the first build, rerun `python -m lab.cli preflight --campaign base_2k` when you want campaign-specific asset checks. If a run looks promising, validate it before treating it as a champion:
 
 ```bash
 python -m lab.cli validate --experiment <experiment_id> --mode confirm
 python -m lab.cli validate --experiment <experiment_id> --mode audit
 ```
 
-Or run an unattended session:
+Optional tools that stay off the common path:
 
-```bash
-python -m lab.cli night --campaign base_2k --hours 8 --allow-confirm
-```
+- `python -m lab.cli autotune --campaign base_2k --all-lanes`
+- `python -m lab.cli inspect --campaign base_2k`
+- `python -m lab.cli smoke --gpu`
 
 ## Code Lane
 
@@ -181,26 +175,36 @@ Imported code proposals execute from an isolated snapshot under `.worktrees/` an
 
 ## Important Commands
 
+Common path:
+
 - `python -m lab.cli bootstrap`
 - `python -m lab.cli preflight`
 - `python -m lab.cli campaign build`
-- `python -m lab.cli campaign queue`
 - `python -m lab.cli run`
+- `python -m lab.cli night`
+- `python -m lab.cli report`
+- `python -m lab.cli doctor`
+- `python -m lab.cli cleanup --dry-run`
+
+Advanced:
+
+- `python -m lab.cli inspect`
+- `python -m lab.cli replay`
+- `python -m lab.cli score`
 - `python -m lab.cli validate`
 - `python -m lab.cli noise`
 - `python -m lab.cli autotune`
-- `python -m lab.cli replay`
-- `python -m lab.cli score`
+- `python -m lab.cli campaign queue`
+- `python -m lab.cli campaign show`
+- `python -m lab.cli campaign verify`
 - `python -m lab.cli memory backfill`
 - `python -m lab.cli memory inspect`
+- `python -m lab.cli smoke --gpu`
+
+Optional code lane:
+
 - `python -m lab.cli export-code-proposal`
 - `python -m lab.cli import-code-proposal`
-- `python -m lab.cli night`
-- `python -m lab.cli report`
-- `python -m lab.cli inspect`
-- `python -m lab.cli cleanup`
-- `python -m lab.cli doctor`
-- `python -m lab.cli smoke --gpu`
 
 ## If You Want The Original Minimal Path
 

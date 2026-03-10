@@ -7,7 +7,7 @@ Future implementation-forced changes should be appended here with date, reason, 
 
 ## Initial resolved decisions
 
-### A1 — Proposal taxonomy has two axes
+### A1 - Proposal taxonomy has two axes
 Reason:
 Earlier docs could be read as if proposal intent and proposal implementation mode were the same thing.
 
@@ -15,43 +15,44 @@ Resolution:
 - `family`: baseline / exploit / ablation / combine / novel / manual
 - `kind`: structured / code_patch / manual
 
-### A2 — Crash class uses `interrupted`
+### A2 - Crash class uses `interrupted`
 Reason:
 Earlier docs mixed `keyboard_interrupt` and `interrupted`.
 
 Resolution:
 Use `interrupted` everywhere.
 
-### A3 — Base 2k parity campaign uses explicit held-out shards
+### A3 - Base 2k parity campaign uses explicit held-out shards
 Resolution:
 - search validation shard: `shard_06542.parquet`
 - audit validation shard: `shard_06541.parquet`
 - locked validation shard: `shard_06540.parquet`
 - training excludes those explicit shards
 
-### A4 — Long 4k is campaign-local, not globally comparable
+### A4 - Long 4k is campaign-local, not globally comparable
 Resolution:
 `long_4k` uses the climbmix source family but is not leaderboard-comparable to `base_2k`.
 
-### A5 — Stories campaign uses deterministic partitioning
+### A5 - Stories campaign uses deterministic partitioning
 Resolution:
 TinyStories-style campaign splits are deterministic hash partitions, not ad hoc sampling.
 
-### A6 — Control plane is structured data
+### A6 - Control plane is structured data
 Resolution:
-runner, scheduler, promotion, archive, and reporting must use structured JSON and SQLite.
+Runner, scheduler, promotion, archive, and reporting must use structured JSON and SQLite.
 Raw logs are debugging artifacts only.
 
-### A7 — Backend choice is cached and blacklist-aware
+### A7 - Backend choice is cached and blacklist-aware
 Resolution:
-backend microbench results are cached by device profile and shape family.
+Backend microbench results are cached by device profile and shape family.
 Runtime failures can blacklist backend-shape pairs and trigger reselection.
 
-### A8 — Reference implementations are normative starting points
+### A8 - Live runtime modules own live semantics
 Resolution:
-For scheduler, archive, promotion, packing, crash classification, and recommendations, `reference_impl/` is the intended implementation scaffold.
+- Scheduler, archive, promotion, packing, crash classification, recommendations, and split rules now live in their runtime homes under `lab/` and `research/`.
+- Historical reference notes, when retained, live under `docs/archive/reference_impl/`.
 
-### A9 â€” Report artifacts use date-first then campaign paths
+### A9 - Report artifacts use date-first then campaign paths
 Reason:
 The artifact contract wanted date-local reports, while the path helper and multi-campaign behavior still required a campaign dimension.
 
@@ -95,6 +96,15 @@ Resolution:
 - autotune may choose runtime-only overlays such as batch sizes or compile enablement
 - scientific identity remains tied to the proposal and resolved scientific config
 - manifests and reports must surface both runtime overlay and effective runtime settings explicitly
+
+### A14 - CLI output now has one stable envelope and concise human summaries
+Reason:
+Phase-pack growth left the CLI with generic key-value dumping and uneven machine contracts.
+
+Resolution:
+- every CLI command that supports `--json` now emits top-level `ok`, `command`, `status`, and `message` fields
+- the common operator path uses concise human summaries instead of raw dict dumps
+- top-level help foregrounds the canonical path and visually demotes advanced, optional, and maintenance commands
 
 ## How to extend this file
 

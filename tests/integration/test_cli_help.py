@@ -54,9 +54,17 @@ class CliHelpTests(unittest.TestCase):
     def test_help_commands_work(self) -> None:
         result = self._run_cli("--help")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("bootstrap", result.stdout)
-        self.assertIn("preflight", result.stdout)
-        self.assertIn("smoke", result.stdout)
+        self.assertIn("Autoresearch Lab: a local, single-GPU, CUDA-first, dense-model research lab.", result.stdout)
+        self.assertIn("Common path: bootstrap -> preflight -> campaign build -> run -> night -> report -> doctor -> cleanup", result.stdout)
+        self.assertLess(result.stdout.index("bootstrap"), result.stdout.index("preflight"))
+        self.assertLess(result.stdout.index("preflight"), result.stdout.index("campaign"))
+        self.assertLess(result.stdout.index("campaign"), result.stdout.index("run"))
+        self.assertLess(result.stdout.index("run"), result.stdout.index("night"))
+        self.assertLess(result.stdout.index("night"), result.stdout.index("report"))
+        self.assertLess(result.stdout.index("report"), result.stdout.index("doctor"))
+        self.assertLess(result.stdout.index("doctor"), result.stdout.index("cleanup"))
+        self.assertIn("[optional code lane] export a code-lane task pack", result.stdout)
+        self.assertIn("[maintenance] diagnose ledger and artifact health", result.stdout)
 
         subcommand = self._run_cli("bootstrap", "--help")
         self.assertEqual(subcommand.returncode, 0, subcommand.stderr)
@@ -74,6 +82,9 @@ class CliHelpTests(unittest.TestCase):
             self.assertEqual(preflight.returncode, 3, preflight.stderr)
             payload = json.loads(preflight.stdout)
             self.assertIn("ok", payload)
+            self.assertEqual(payload["command"], "preflight")
+            self.assertIn("status", payload)
+            self.assertIn("message", payload)
             self.assertIn("warnings", payload)
 
 

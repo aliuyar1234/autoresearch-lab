@@ -83,17 +83,256 @@ def _build_common_parser(*, suppress_defaults: bool = False) -> argparse.Argumen
     return common
 
 
+def _command_name(args: argparse.Namespace) -> str:
+    command = str(getattr(args, "command", "cli"))
+    if command == "campaign" and getattr(args, "campaign_command", None):
+        return f"campaign.{args.campaign_command}"
+    if command == "memory" and getattr(args, "memory_command", None):
+        return f"memory.{args.memory_command}"
+    return command
+
+
+def _with_envelope(
+    payload: dict[str, object],
+    *,
+    command: str,
+    status: str | None = None,
+    message: str,
+) -> dict[str, object]:
+    data = dict(payload)
+    ok = bool(data.get("ok", True))
+    data["ok"] = ok
+    data["command"] = command
+    data["status"] = str(status or data.get("status") or ("ok" if ok else "error"))
+    data["message"] = message
+    return data
+
+
+def _respond(
+    args: argparse.Namespace,
+    payload: dict[str, object],
+    *,
+    status: str | None = None,
+    message: str,
+    command: str | None = None,
+) -> None:
+    _emit(
+        _with_envelope(
+            payload,
+            command=command or _command_name(args),
+            status=status,
+            message=message,
+        ),
+        bool(getattr(args, "json", False)),
+    )
+
+
+def _sentence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    if stripped.endswith((".", "!", "?")):
+        return stripped
+    return f"{stripped}."
+
+
+def _format_metric(name: object, value: object) -> str | None:
+    if value is None:
+        return None
+    label = str(name or "metric")
+    try:
+        return f"{label}={float(value):.6f}"
+    except (TypeError, ValueError):
+        return f"{label}={value}"
+
+
+def _format_bytes(value: object) -> str:
+    try:
+        size = float(value or 0)
+    except (TypeError, ValueError):
+        return "0 B"
+    units = ("B", "KB", "MB", "GB", "TB")
+    unit_index = 0
+    while size >= 1024 and unit_index < len(units) - 1:
+        size /= 1024
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(size)} {units[unit_index]}"
+    return f"{size:.1f} {units[unit_index]}"
+
+
+def _sample_items(items: object, *, limit: int = 2, key: str | None = None) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    sampled: list[str] = []
+    for item in items:
+        if len(sampled) >= limit:
+            break
+        if key is not None and isinstance(item, dict):
+            value = item.get(key)
+        else:
+            value = item
+        if value in (None, "", [], {}):
+            continue
+        sampled.append(str(value))
+    return sampled
+
+
+def _generic_human_lines(payload: dict[str, object]) -> list[str]:
+    lines = [_sentence(str(payload.get("message") or "command completed"))]
+    for label, key in (
+        ("Status", "status"),
+        ("Campaign", "campaign_id"),
+        ("Experiment", "experiment_id"),
+        ("Proposal", "proposal_id"),
+        ("Artifacts", "artifact_root"),
+        ("Summary", "summary_path"),
+        ("Report", "report_path"),
+        ("Error", "error"),
+    ):
+        value = payload.get(key)
+        if value in (None, "", [], {}):
+            continue
+        lines.append(f"{label}: {value}")
+    return lines
+
+
+def _bootstrap_human_lines(payload: dict[str, object]) -> list[str]:
+    created_roots = payload.get("created_roots")
+    created_count = len(created_roots) if isinstance(created_roots, list) else 0
+    db_state = "created" if payload.get("db_created") else "already existed"
+    roots_line = f"Created {created_count} managed roots." if created_count else "Managed roots already existed."
+    return [
+        "Bootstrap ready.",
+        f"{roots_line} Database {db_state} at {payload.get('db_path')}.",
+        f"Env file: {payload.get('env_file')}",
+    ]
+
+
+def _preflight_human_lines(payload: dict[str, object]) -> list[str]:
+    campaign = str(payload.get("campaign_id") or "repo")
+    warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
+    missing_assets = payload.get("missing_assets") if isinstance(payload.get("missing_assets"), list) else []
+    device = str(payload.get("device") or "not detected")
+    profile = str(payload.get("device_profile") or "unknown profile")
+    lines = [
+        f"Preflight {'passed' if payload.get('ok') else 'found issues'} for {campaign}.",
+        f"Device: {device} ({profile}). Warnings: {len(warnings)}. Missing assets: {len(missing_assets)}.",
+    ]
+    if warnings:
+        lines.append(f"First warning: {warnings[0]}")
+    if missing_assets:
+        lines.append(f"Missing asset: {missing_assets[0]}")
+    return lines
+
+
+def _campaign_build_human_lines(payload: dict[str, object]) -> list[str]:
+    return [
+        f"Campaign assets built for {payload.get('campaign_id')}.",
+        f"Asset root: {payload.get('asset_root')}",
+        f"Packed manifest: {payload.get('packed_manifest')}",
+    ]
+
+
+def _run_human_lines(payload: dict[str, object]) -> list[str]:
+    status = str(payload.get("status") or "unknown").replace("_", " ")
+    lines = [
+        f"Run {status} for {payload.get('experiment_id')}.",
+        f"Proposal: {payload.get('proposal_id')} ({payload.get('proposal_family')}/{payload.get('proposal_kind')}).",
+    ]
+    metric = _format_metric(payload.get("primary_metric_name"), payload.get("primary_metric_value"))
+    disposition = payload.get("disposition")
+    validation_state = payload.get("validation_state")
+    if metric:
+        lines.append(f"Metric: {metric}.")
+    if disposition not in (None, "") or validation_state not in (None, ""):
+        lines.append(f"Disposition: {disposition or 'n/a'}. Validation: {validation_state or 'n/a'}.")
+    if payload.get("crash_class"):
+        lines.append(f"Crash class: {payload.get('crash_class')}")
+    lines.append(f"Summary: {payload.get('summary_path')}")
+    return lines
+
+
+def _night_human_lines(payload: dict[str, object]) -> list[str]:
+    status = str(payload.get("status") or "unknown").replace("_", " ")
+    lines = [
+        f"Night session {status} for {payload.get('campaign_id')}.",
+        f"Runs: {payload.get('run_count', 0)}. Promotions: {payload.get('promoted_count', 0)}. Failures: {payload.get('failed_count', 0)}.",
+    ]
+    if payload.get("session_started_at") and payload.get("session_ended_at"):
+        lines.append(f"Window: {payload.get('session_started_at')} -> {payload.get('session_ended_at')}")
+    if payload.get("report_path"):
+        lines.append(f"Report: {payload.get('report_path')}")
+    return lines
+
+
+def _report_human_lines(payload: dict[str, object]) -> list[str]:
+    lines = [
+        f"Report generated for {payload.get('campaign_id')} ({payload.get('report_date')}).",
+        f"Runs: {payload.get('run_count', 0)}. Promotions: {payload.get('promoted_count', 0)}. Failures: {payload.get('failed_count', 0)}.",
+    ]
+    if payload.get("window_started_at") or payload.get("window_ended_at"):
+        lines.append(f"Window: {payload.get('window_started_at')} -> {payload.get('window_ended_at')}")
+    if payload.get("report_path"):
+        lines.append(f"Report: {payload.get('report_path')}")
+    return lines
+
+
+def _doctor_human_lines(payload: dict[str, object]) -> list[str]:
+    counts = payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
+    findings = payload.get("findings")
+    lines = [
+        "Doctor is clean." if payload.get("ok") else "Doctor found issues.",
+        f"Errors: {counts.get('error', 0)}. Warnings: {counts.get('warning', 0)}. Info: {counts.get('info', 0)}.",
+    ]
+    if isinstance(findings, list):
+        for message in _sample_items(findings, key="message"):
+            lines.append(f"Action: {message}")
+    return lines
+
+
+def _cleanup_human_lines(payload: dict[str, object]) -> list[str]:
+    mode = "Cleanup applied." if payload.get("apply") else "Cleanup dry run."
+    lines = [
+        mode,
+        (
+            f"Candidates: {payload.get('candidate_count', 0)}. "
+            f"Reclaimable: {_format_bytes(payload.get('candidate_bytes'))}. "
+            f"Skipped: {payload.get('skipped_count', 0)}."
+        ),
+    ]
+    path_source = payload.get("deleted_paths") if payload.get("apply") else payload.get("candidates")
+    for path in _sample_items(path_source, key="path"):
+        lines.append(f"Path: {path}")
+    return lines
+
+
 def _emit(payload: dict[str, object], as_json: bool) -> None:
     if as_json:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
-    for key, value in payload.items():
-        if isinstance(value, list):
-            print(f"{key}:")
-            for item in value:
-                print(f"  - {item}")
-        else:
-            print(f"{key}: {value}")
+    command = str(payload.get("command") or "")
+    if command == "bootstrap":
+        lines = _bootstrap_human_lines(payload)
+    elif command == "preflight":
+        lines = _preflight_human_lines(payload)
+    elif command == "campaign.build":
+        lines = _campaign_build_human_lines(payload)
+    elif command == "run":
+        lines = _run_human_lines(payload)
+    elif command == "night":
+        lines = _night_human_lines(payload)
+    elif command == "report":
+        lines = _report_human_lines(payload)
+    elif command == "doctor":
+        lines = _doctor_human_lines(payload)
+    elif command == "cleanup":
+        lines = _cleanup_human_lines(payload)
+    else:
+        lines = _generic_human_lines(payload)
+    for line in lines:
+        if line:
+            print(line)
 
 
 def _relative_or_absolute(path: Path, repo_root: Path) -> str:
@@ -147,6 +386,7 @@ def _cmd_bootstrap(args: argparse.Namespace) -> int:
         "ok": True,
         "repo_root": str(paths.repo_root),
         "created_roots": stringify_paths(created_roots),
+        "created_root_count": len(created_roots),
         "db_path": str(paths.db_path),
         "db_created": db_created,
         "schema_versions": schema_versions,
@@ -158,7 +398,7 @@ def _cmd_bootstrap(args: argparse.Namespace) -> int:
             str(paths.sql_root),
         ],
     }
-    _emit(payload, args.json)
+    _respond(args, payload, status="ready", message="initialized managed lab roots")
     return EXIT_SUCCESS
 
 
@@ -170,7 +410,13 @@ def _cmd_preflight(args: argparse.Namespace) -> int:
         campaign_id=getattr(args, "campaign", None),
         benchmark_backends=bool(getattr(args, "benchmark_backends", False)),
     )
-    _emit(result.to_dict(), args.json)
+    payload = result.to_dict()
+    _respond(
+        args,
+        payload,
+        status="ok" if result.ok else "issues_found",
+        message="checked local lab prerequisites",
+    )
     return EXIT_SUCCESS if result.ok else EXIT_PREFLIGHT_FAILURE
 
 
@@ -209,7 +455,12 @@ def _cmd_smoke(args: argparse.Namespace) -> int:
             "tiny_gpu_run": tiny_gpu,
         }
     )
-    _emit(payload, args.json)
+    _respond(
+        args,
+        payload,
+        status="ok" if smoke_ok else "issues_found",
+        message="ran smoke checks",
+    )
     return EXIT_SUCCESS if smoke_ok else EXIT_PREFLIGHT_FAILURE
 
 
@@ -220,7 +471,7 @@ def _cmd_campaign_list(args: argparse.Namespace) -> int:
         "ok": True,
         "campaigns": list_campaigns(paths),
     }
-    _emit(payload, args.json)
+    _respond(args, payload, status="ok", message=f"listed {len(payload['campaigns'])} campaigns")
     return EXIT_SUCCESS
 
 
@@ -230,7 +481,7 @@ def _cmd_campaign_show(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     payload = load_campaign(paths, args.campaign)
-    _emit(payload, args.json)
+    _respond(args, payload, status="ok", message=f"loaded campaign {args.campaign}")
     return EXIT_SUCCESS
 
 
@@ -240,7 +491,7 @@ def _cmd_campaign_build(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     payload = build_campaign(paths, args.campaign, source_dir=getattr(args, "source_dir", None))
-    _emit(payload, args.json)
+    _respond(args, payload, status="built", message=f"built campaign assets for {args.campaign}")
     return EXIT_SUCCESS
 
 
@@ -250,7 +501,12 @@ def _cmd_campaign_verify(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     payload = verify_campaign(paths, args.campaign)
-    _emit(payload, args.json)
+    _respond(
+        args,
+        payload,
+        status="verified" if payload["ok"] else "issues_found",
+        message=f"verified campaign assets for {args.campaign}",
+    )
     return EXIT_SUCCESS if payload["ok"] else EXIT_PREFLIGHT_FAILURE
 
 
@@ -302,7 +558,12 @@ def _cmd_campaign_queue(args: argparse.Namespace) -> int:
             for proposal in queue
         ],
     }
-    _emit(payload, args.json)
+    _respond(
+        args,
+        payload,
+        status="queued" if bool(getattr(args, "apply", False)) else "planned",
+        message="queued structured proposals" if bool(getattr(args, "apply", False)) else "planned structured queue entries",
+    )
     return EXIT_SUCCESS
 
 
@@ -519,7 +780,12 @@ def _cmd_autotune(args: argparse.Namespace) -> int:
             "backend": str(backend),
             "results": results,
         }
-    _emit(payload, args.json)
+    _respond(
+        args,
+        payload,
+        status="tuned" if payload.get("ok") else "no_winner",
+        message="resolved runtime autotune overlays",
+    )
     return EXIT_SUCCESS if payload.get("ok") else EXIT_PREFLIGHT_FAILURE
 
 
@@ -548,6 +814,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         eval_split=eval_split,
         run_purpose=run_purpose,
     )
+    summary_payload = read_json(result.summary_path) if result.summary_path.exists() else {}
 
     payload = {
         "ok": result.status == "completed" and not result.schema_failed,
@@ -561,10 +828,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
         "crash_class": result.crash_class,
         "artifact_root": str(result.artifact_root),
         "summary_path": str(result.summary_path),
+        "primary_metric_name": summary_payload.get("primary_metric_name") if isinstance(summary_payload, dict) else None,
         "primary_metric_value": result.primary_metric_value,
+        "disposition": summary_payload.get("disposition") if isinstance(summary_payload, dict) else None,
+        "validation_state": summary_payload.get("validation_state") if isinstance(summary_payload, dict) else None,
         "schema_failed": result.schema_failed,
     }
-    _emit(payload, args.json)
+    _respond(args, payload, message="executed one proposal")
     if result.schema_failed:
         return EXIT_SCHEMA_FAILURE
     return EXIT_SUCCESS if result.status == "completed" else EXIT_RUN_FAILURE
@@ -612,7 +882,7 @@ def _cmd_replay(args: argparse.Namespace) -> int:
         "summary_path": str(result.summary_path),
         "source_experiment_id": replay_source_experiment_id,
     }
-    _emit(payload, args.json)
+    _respond(args, payload, message="replayed one proposal")
     if result.schema_failed:
         return EXIT_SCHEMA_FAILURE
     return EXIT_SUCCESS if result.status == "completed" else EXIT_RUN_FAILURE
@@ -652,7 +922,7 @@ def _cmd_export_code_proposal(args: argparse.Namespace) -> int:
         )
     except CodeProposalExportError as exc:
         raise SettingsError(str(exc)) from exc
-    _emit(payload, args.json)
+    _respond(args, payload, status="exported", message=f"exported code proposal pack for {args.proposal_id}")
     return EXIT_SUCCESS
 
 
@@ -682,7 +952,7 @@ def _cmd_import_code_proposal(args: argparse.Namespace) -> int:
         connection.commit()
     finally:
         connection.close()
-    _emit(payload, args.json)
+    _respond(args, payload, status="imported", message=f"imported code proposal result for {args.proposal_id}")
     return EXIT_SUCCESS
 
 
@@ -709,7 +979,12 @@ def _cmd_report(args: argparse.Namespace) -> int:
         connection.commit()
     finally:
         connection.close()
-    _emit(payload, args.json)
+    payload = {
+        **payload,
+        "report_path": payload["artifact_paths"]["report_md"],
+        "report_json_path": payload["artifact_paths"]["report_json"],
+    }
+    _respond(args, payload, status="generated", message="generated one report bundle")
     return EXIT_SUCCESS
 
 
@@ -733,13 +1008,15 @@ def _cmd_memory_backfill(args: argparse.Namespace) -> int:
         connection.commit()
     finally:
         connection.close()
-    _emit(
+    _respond(
+        args,
         {
             "ok": True,
             "campaign_id": str(args.campaign),
             **payload,
         },
-        args.json,
+        status="backfilled",
+        message=f"backfilled memory for {args.campaign}",
     )
     return EXIT_SUCCESS
 
@@ -761,14 +1038,16 @@ def _cmd_memory_inspect(args: argparse.Namespace) -> int:
         )
     finally:
         connection.close()
-    _emit(
+    _respond(
+        args,
         {
             "ok": True,
             "campaign_id": str(args.campaign),
             "count": len(records),
             "records": records,
         },
-        args.json,
+        status="ok",
+        message=f"listed {len(records)} memory records",
     )
     return EXIT_SUCCESS
 
@@ -800,7 +1079,13 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         reuse_comparator_replays=bool(getattr(args, "reuse_comparator_replays", False)),
         force_replay=bool(getattr(args, "force_replay", False)),
     )
-    _emit(review.to_dict(), args.json)
+    payload = review.to_dict()
+    _respond(
+        args,
+        payload,
+        status=str(payload.get("decision") or "completed"),
+        message=f"reviewed candidate on {args.mode} validation",
+    )
     if str(review.decision) == "failed":
         return EXIT_RUN_FAILURE
     return EXIT_SUCCESS
@@ -825,7 +1110,7 @@ def _cmd_noise(args: argparse.Namespace) -> int:
         device_profile=getattr(args, "device_profile", None),
         backend=getattr(args, "backend", None),
     )
-    _emit(payload.to_dict(), args.json)
+    _respond(args, payload.to_dict(), status="measured", message=f"measured noise on {args.lane} lane")
     return EXIT_SUCCESS
 
 
@@ -847,7 +1132,16 @@ def _cmd_cleanup(args: argparse.Namespace) -> int:
             connection.commit()
     finally:
         connection.close()
-    _emit(payload, args.json)
+    payload = {
+        **payload,
+        "candidate_bytes": sum(int(item.get("size_bytes") or 0) for item in payload.get("candidates", [])),
+    }
+    _respond(
+        args,
+        payload,
+        status="applied" if bool(getattr(args, "apply", False)) else "dry_run",
+        message="applied cleanup" if bool(getattr(args, "apply", False)) else "planned cleanup",
+    )
     return EXIT_SUCCESS
 
 
@@ -855,7 +1149,12 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     payload = run_doctor(paths, campaign_id=getattr(args, "campaign", None))
-    _emit(payload, args.json)
+    _respond(
+        args,
+        payload,
+        status="clean" if payload.get("ok") else "issues_found",
+        message="checked ledger and artifact health",
+    )
     return EXIT_SUCCESS if payload.get("ok") else EXIT_PREFLIGHT_FAILURE
 
 
@@ -879,7 +1178,15 @@ def _cmd_night(args: argparse.Namespace) -> int:
         device_profile=getattr(args, "device_profile", None),
         backend=getattr(args, "backend", None),
     )
-    _emit(payload, args.json)
+    report_payload = payload.get("report") if isinstance(payload.get("report"), dict) else {}
+    payload = {
+        **payload,
+        "report_path": report_payload.get("artifact_paths", {}).get("report_md") if isinstance(report_payload, dict) else None,
+        "report_json_path": report_payload.get("artifact_paths", {}).get("report_json") if isinstance(report_payload, dict) else None,
+        "promoted_count": report_payload.get("promoted_count", 0) if isinstance(report_payload, dict) else 0,
+        "failed_count": report_payload.get("failed_count", 0) if isinstance(report_payload, dict) else 0,
+    }
+    _respond(args, payload, message="completed one night session")
     if payload.get("status") == "interrupted":
         return EXIT_INTERRUPTED
     return EXIT_SUCCESS if payload.get("ok") else EXIT_PREFLIGHT_FAILURE
@@ -1016,7 +1323,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
             raise SettingsError("inspect requires --experiment, --proposal, or --campaign")
     finally:
         connection.close()
-    _emit(payload, args.json)
+    _respond(args, payload, status=str(payload.get("status") or "ok"), message=f"inspected {payload.get('kind', 'record')}")
     return EXIT_SUCCESS
 
 
@@ -1053,7 +1360,7 @@ def _cmd_score(args: argparse.Namespace) -> int:
         "primary_metric_value": row["primary_metric_value"],
         **explanation.to_dict(),
     }
-    _emit(payload, args.json)
+    _respond(args, payload, message=f"scored experiment {row['experiment_id']}")
     return EXIT_SUCCESS
 
 
@@ -1155,7 +1462,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog="python -m lab.cli",
-        description="Autoresearch Lab command line interface",
+        description="Autoresearch Lab: a local, single-GPU, CUDA-first, dense-model research lab.",
+        epilog="Common path: bootstrap -> preflight -> campaign build -> run -> night -> report -> doctor -> cleanup",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         parents=[common],
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1168,36 +1477,32 @@ def build_parser() -> argparse.ArgumentParser:
     preflight.add_argument("--benchmark-backends", action="store_true")
     preflight.set_defaults(handler=_cmd_preflight)
 
-    smoke = subparsers.add_parser("smoke", parents=[common], help="run a quick health check")
-    smoke.add_argument("--campaign")
-    smoke.add_argument("--gpu", action="store_true", help="include GPU checks")
-    smoke.set_defaults(handler=_cmd_smoke)
-
-    campaign = subparsers.add_parser("campaign", parents=[common], help="campaign management commands")
+    campaign = subparsers.add_parser("campaign", parents=[common], help="campaign asset and queue commands")
     campaign_subparsers = campaign.add_subparsers(dest="campaign_command", required=True)
-    campaign_list = campaign_subparsers.add_parser("list", parents=[nested_common], help="list campaigns")
-    campaign_list.set_defaults(handler=_cmd_campaign_list)
-
-    campaign_show = campaign_subparsers.add_parser("show", parents=[nested_common], help="show one campaign manifest")
-    campaign_show.add_argument("--campaign")
-    campaign_show.set_defaults(handler=_cmd_campaign_show)
 
     campaign_build = campaign_subparsers.add_parser("build", parents=[nested_common], help="build campaign assets")
     campaign_build.add_argument("--campaign")
     campaign_build.add_argument("--source-dir", type=Path)
     campaign_build.set_defaults(handler=_cmd_campaign_build)
 
-    campaign_verify = campaign_subparsers.add_parser("verify", parents=[nested_common], help="verify campaign assets")
-    campaign_verify.add_argument("--campaign")
-    campaign_verify.set_defaults(handler=_cmd_campaign_verify)
-
-    campaign_queue = campaign_subparsers.add_parser("queue", parents=[nested_common], help="preview or apply structured queue fill")
+    campaign_queue = campaign_subparsers.add_parser("queue", parents=[nested_common], help="[advanced] preview or apply structured queue fill")
     campaign_queue.add_argument("--campaign")
     campaign_queue.add_argument("--count", type=int, default=5)
     campaign_queue.add_argument("--lane", choices=["scout", "main", "confirm"])
     campaign_queue.add_argument("--family", choices=GENERATABLE_FAMILIES)
     campaign_queue.add_argument("--apply", action="store_true")
     campaign_queue.set_defaults(handler=_cmd_campaign_queue)
+
+    campaign_show = campaign_subparsers.add_parser("show", parents=[nested_common], help="[advanced] show one campaign manifest")
+    campaign_show.add_argument("--campaign")
+    campaign_show.set_defaults(handler=_cmd_campaign_show)
+
+    campaign_verify = campaign_subparsers.add_parser("verify", parents=[nested_common], help="[advanced] verify campaign assets")
+    campaign_verify.add_argument("--campaign")
+    campaign_verify.set_defaults(handler=_cmd_campaign_verify)
+
+    campaign_list = campaign_subparsers.add_parser("list", parents=[nested_common], help="[advanced] list campaigns")
+    campaign_list.set_defaults(handler=_cmd_campaign_list)
 
     run_parser = subparsers.add_parser("run", parents=[common], help="execute one proposal")
     run_parser.add_argument("--campaign")
@@ -1215,85 +1520,6 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--eval-split", choices=["search_val", "audit_val", "locked_val"])
     run_parser.add_argument("--run-purpose", choices=["search", "confirm", "audit", "replay", "baseline", "noise_probe"])
     run_parser.set_defaults(handler=_cmd_run)
-
-    autotune_parser = subparsers.add_parser("autotune", parents=[common], help="probe and cache runtime-only tuning overlays")
-    autotune_parser.add_argument("--campaign")
-    autotune_parser.add_argument("--lane", choices=["scout", "main", "confirm"])
-    autotune_parser.add_argument("--all-lanes", action="store_true")
-    autotune_parser.add_argument("--backend")
-    autotune_parser.add_argument("--device-profile")
-    autotune_parser.add_argument("--force", action="store_true")
-    autotune_parser.set_defaults(handler=_cmd_autotune)
-
-    inspect_parser = subparsers.add_parser("inspect", parents=[common], help="inspect campaigns, proposals, or experiments")
-    inspect_parser.add_argument("--experiment")
-    inspect_parser.add_argument("--proposal")
-    inspect_parser.add_argument("--campaign")
-    inspect_parser.set_defaults(handler=_cmd_inspect)
-
-    replay_parser = subparsers.add_parser("replay", parents=[common], help="re-run an existing manifest or proposal")
-    replay_parser.add_argument("--experiment")
-    replay_parser.add_argument("--proposal")
-    replay_parser.add_argument("--target-command")
-    replay_parser.add_argument("--target-command-json")
-    replay_parser.add_argument("--time-budget-seconds", type=int)
-    replay_parser.add_argument("--seed", type=int)
-    replay_parser.add_argument("--backend")
-    replay_parser.add_argument("--device-profile")
-    replay_parser.add_argument("--eval-split", choices=["search_val", "audit_val", "locked_val"])
-    replay_parser.add_argument("--run-purpose", choices=["search", "confirm", "audit", "replay", "baseline", "noise_probe"])
-    replay_parser.set_defaults(handler=_cmd_replay)
-
-    score_parser = subparsers.add_parser("score", parents=[common], help="explain or recompute scoring decisions")
-    score_parser.add_argument("--experiment", required=True)
-    score_parser.set_defaults(handler=_cmd_score)
-
-    validate_parser = subparsers.add_parser("validate", parents=[common], help="run validation replays for a candidate experiment")
-    validate_parser.add_argument("--experiment", required=True)
-    validate_parser.add_argument("--mode", required=True, choices=["confirm", "audit", "locked"])
-    validate_parser.add_argument("--dry-run", action="store_true")
-    validate_parser.add_argument("--reuse-comparator-replays", action=argparse.BooleanOptionalAction, default=True)
-    validate_parser.add_argument("--force-replay", action="store_true")
-    validate_parser.add_argument("--target-command")
-    validate_parser.add_argument("--target-command-json")
-    validate_parser.add_argument("--time-budget-seconds", type=int)
-    validate_parser.add_argument("--backend")
-    validate_parser.add_argument("--device-profile")
-    validate_parser.set_defaults(handler=_cmd_validate)
-
-    noise_parser = subparsers.add_parser("noise", parents=[common], help="run comparable baseline noise probes")
-    noise_parser.add_argument("--campaign", required=True)
-    noise_parser.add_argument("--lane", required=True, choices=["scout", "main", "confirm"])
-    noise_parser.add_argument("--count", type=int, default=5)
-    noise_parser.add_argument("--seed-start", type=int, default=42)
-    noise_parser.add_argument("--target-command")
-    noise_parser.add_argument("--target-command-json")
-    noise_parser.add_argument("--time-budget-seconds", type=int)
-    noise_parser.add_argument("--backend")
-    noise_parser.add_argument("--device-profile")
-    noise_parser.set_defaults(handler=_cmd_noise)
-
-    memory_parser = subparsers.add_parser("memory", parents=[common], help="memory ingestion and inspection commands")
-    memory_subparsers = memory_parser.add_subparsers(dest="memory_command", required=True)
-
-    memory_backfill = memory_subparsers.add_parser("backfill", parents=[nested_common], help="backfill memory records from historical ledger state")
-    memory_backfill.add_argument("--campaign", required=True)
-    memory_backfill.set_defaults(handler=_cmd_memory_backfill)
-
-    memory_inspect = memory_subparsers.add_parser("inspect", parents=[nested_common], help="inspect stored memory records")
-    memory_inspect.add_argument("--campaign", required=True)
-    memory_inspect.add_argument("--limit", type=int, default=20)
-    memory_inspect.set_defaults(handler=_cmd_memory_inspect)
-
-    export_parser = subparsers.add_parser("export-code-proposal", parents=[common], help="export a code-lane task pack")
-    export_parser.add_argument("--proposal-id", required=True)
-    export_parser.set_defaults(handler=_cmd_export_code_proposal)
-
-    import_parser = subparsers.add_parser("import-code-proposal", parents=[common], help="import a returned code-lane patch or worktree")
-    import_parser.add_argument("--proposal-id", required=True)
-    import_parser.add_argument("--patch-path", type=Path)
-    import_parser.add_argument("--worktree-path", type=Path)
-    import_parser.set_defaults(handler=_cmd_import_code_proposal)
 
     night_parser = subparsers.add_parser("night", parents=[common], help="run an unattended night session")
     night_parser.add_argument("--campaign")
@@ -1314,15 +1540,99 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--to", dest="to_timestamp")
     report_parser.set_defaults(handler=_cmd_report)
 
-    doctor_parser = subparsers.add_parser("doctor", parents=[common], help="diagnose ledger and artifact health")
+    doctor_parser = subparsers.add_parser("doctor", parents=[common], help="[maintenance] diagnose ledger and artifact health")
     doctor_parser.add_argument("--campaign")
     doctor_parser.set_defaults(handler=_cmd_doctor)
 
-    cleanup_parser = subparsers.add_parser("cleanup", parents=[common], help="remove discardable artifacts")
+    cleanup_parser = subparsers.add_parser("cleanup", parents=[common], help="[maintenance] remove discardable artifacts")
     cleanup_parser.add_argument("--campaign")
     cleanup_parser.add_argument("--dry-run", action="store_true")
     cleanup_parser.add_argument("--apply", action="store_true")
     cleanup_parser.set_defaults(handler=_cmd_cleanup)
+
+    inspect_parser = subparsers.add_parser("inspect", parents=[common], help="[advanced] inspect campaigns, proposals, or experiments")
+    inspect_parser.add_argument("--experiment")
+    inspect_parser.add_argument("--proposal")
+    inspect_parser.add_argument("--campaign")
+    inspect_parser.set_defaults(handler=_cmd_inspect)
+
+    replay_parser = subparsers.add_parser("replay", parents=[common], help="[advanced] re-run an existing manifest or proposal")
+    replay_parser.add_argument("--experiment")
+    replay_parser.add_argument("--proposal")
+    replay_parser.add_argument("--target-command")
+    replay_parser.add_argument("--target-command-json")
+    replay_parser.add_argument("--time-budget-seconds", type=int)
+    replay_parser.add_argument("--seed", type=int)
+    replay_parser.add_argument("--backend")
+    replay_parser.add_argument("--device-profile")
+    replay_parser.add_argument("--eval-split", choices=["search_val", "audit_val", "locked_val"])
+    replay_parser.add_argument("--run-purpose", choices=["search", "confirm", "audit", "replay", "baseline", "noise_probe"])
+    replay_parser.set_defaults(handler=_cmd_replay)
+
+    score_parser = subparsers.add_parser("score", parents=[common], help="[advanced] explain or recompute scoring decisions")
+    score_parser.add_argument("--experiment", required=True)
+    score_parser.set_defaults(handler=_cmd_score)
+
+    validate_parser = subparsers.add_parser("validate", parents=[common], help="[advanced] run validation replays for a candidate experiment")
+    validate_parser.add_argument("--experiment", required=True)
+    validate_parser.add_argument("--mode", required=True, choices=["confirm", "audit", "locked"])
+    validate_parser.add_argument("--dry-run", action="store_true")
+    validate_parser.add_argument("--reuse-comparator-replays", action=argparse.BooleanOptionalAction, default=True)
+    validate_parser.add_argument("--force-replay", action="store_true")
+    validate_parser.add_argument("--target-command")
+    validate_parser.add_argument("--target-command-json")
+    validate_parser.add_argument("--time-budget-seconds", type=int)
+    validate_parser.add_argument("--backend")
+    validate_parser.add_argument("--device-profile")
+    validate_parser.set_defaults(handler=_cmd_validate)
+
+    noise_parser = subparsers.add_parser("noise", parents=[common], help="[advanced] run comparable baseline noise probes")
+    noise_parser.add_argument("--campaign", required=True)
+    noise_parser.add_argument("--lane", required=True, choices=["scout", "main", "confirm"])
+    noise_parser.add_argument("--count", type=int, default=5)
+    noise_parser.add_argument("--seed-start", type=int, default=42)
+    noise_parser.add_argument("--target-command")
+    noise_parser.add_argument("--target-command-json")
+    noise_parser.add_argument("--time-budget-seconds", type=int)
+    noise_parser.add_argument("--backend")
+    noise_parser.add_argument("--device-profile")
+    noise_parser.set_defaults(handler=_cmd_noise)
+
+    autotune_parser = subparsers.add_parser("autotune", parents=[common], help="[advanced] probe and cache runtime-only tuning overlays")
+    autotune_parser.add_argument("--campaign")
+    autotune_parser.add_argument("--lane", choices=["scout", "main", "confirm"])
+    autotune_parser.add_argument("--all-lanes", action="store_true")
+    autotune_parser.add_argument("--backend")
+    autotune_parser.add_argument("--device-profile")
+    autotune_parser.add_argument("--force", action="store_true")
+    autotune_parser.set_defaults(handler=_cmd_autotune)
+
+    memory_parser = subparsers.add_parser("memory", parents=[common], help="[advanced] memory ingestion and inspection commands")
+    memory_subparsers = memory_parser.add_subparsers(dest="memory_command", required=True)
+
+    memory_backfill = memory_subparsers.add_parser("backfill", parents=[nested_common], help="[advanced] backfill memory records from historical ledger state")
+    memory_backfill.add_argument("--campaign", required=True)
+    memory_backfill.set_defaults(handler=_cmd_memory_backfill)
+
+    memory_inspect = memory_subparsers.add_parser("inspect", parents=[nested_common], help="[advanced] inspect stored memory records")
+    memory_inspect.add_argument("--campaign", required=True)
+    memory_inspect.add_argument("--limit", type=int, default=20)
+    memory_inspect.set_defaults(handler=_cmd_memory_inspect)
+
+    export_parser = subparsers.add_parser("export-code-proposal", parents=[common], help="[optional code lane] export a code-lane task pack")
+    export_parser.add_argument("--proposal-id", required=True)
+    export_parser.set_defaults(handler=_cmd_export_code_proposal)
+
+    import_parser = subparsers.add_parser("import-code-proposal", parents=[common], help="[optional code lane] import a returned code-lane patch or worktree")
+    import_parser.add_argument("--proposal-id", required=True)
+    import_parser.add_argument("--patch-path", type=Path)
+    import_parser.add_argument("--worktree-path", type=Path)
+    import_parser.set_defaults(handler=_cmd_import_code_proposal)
+
+    smoke = subparsers.add_parser("smoke", parents=[common], help="[advanced] run a quick health check")
+    smoke.add_argument("--campaign")
+    smoke.add_argument("--gpu", action="store_true", help="include GPU checks")
+    smoke.set_defaults(handler=_cmd_smoke)
 
     return parser
 
@@ -1333,11 +1643,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.handler(args)
     except KeyboardInterrupt:
-        payload = {"ok": False, "message": "interrupted"}
+        payload = _with_envelope({}, command=_command_name(args), status="interrupted", message="interrupted")
         _emit(payload, getattr(args, "json", False))
         return EXIT_INTERRUPTED
     except SettingsError as exc:
-        payload = {"ok": False, "error": str(exc)}
+        payload = _with_envelope(
+            {"ok": False, "error": str(exc)},
+            command=_command_name(args),
+            status="user_error",
+            message=str(exc),
+        )
         _emit(payload, getattr(args, "json", False))
         return EXIT_USER_ERROR
 
