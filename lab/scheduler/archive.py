@@ -1,15 +1,26 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from collections import defaultdict
 import json
 from pathlib import Path
 from typing import Any
-
-from reference_impl.archive_policy import RunRecord, archive_buckets
 
 from ..paths import LabPaths
 from ..semantics import is_completed_metric_run, is_rankable_experiment
 from ..utils import utc_now_iso, write_json
 from .novelty import novelty_tags
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    experiment_id: str
+    metric_value: float
+    peak_vram_gb: float
+    complexity_cost: int
+    novelty_tags: tuple[str, ...]
+    disposition: str
+    lane: str
 
 
 def build_archive_snapshot(experiments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -113,6 +124,62 @@ def _run_record_to_dict(record: RunRecord) -> dict[str, Any]:
         "disposition": record.disposition,
         "lane": record.lane,
     }
+
+
+def archive_buckets(
+    runs: list[RunRecord],
+    *,
+    champion_limit: int = 5,
+    near_miss_limit: int = 8,
+    novel_limit: int = 6,
+) -> dict[str, list[RunRecord]]:
+    champions = sorted(
+        [run for run in runs if run.disposition == "promoted"],
+        key=lambda run: (run.metric_value, run.complexity_cost),
+    )[:champion_limit]
+    pareto = pareto_front(runs)
+    near_misses = sorted(
+        [run for run in runs if run.disposition == "archived"],
+        key=lambda run: (run.metric_value, run.complexity_cost),
+    )[:near_miss_limit]
+
+    by_novelty: dict[str, list[RunRecord]] = defaultdict(list)
+    for run in runs:
+        for tag in run.novelty_tags:
+            by_novelty[tag].append(run)
+
+    novel_winners: list[RunRecord] = []
+    for _, tagged_runs in sorted(by_novelty.items()):
+        best = min(tagged_runs, key=lambda run: (run.metric_value, run.complexity_cost))
+        if best not in novel_winners:
+            novel_winners.append(best)
+    novel_winners = novel_winners[:novel_limit]
+
+    return {
+        "champions": champions,
+        "pareto": pareto,
+        "near_misses": near_misses,
+        "novel_winners": novel_winners,
+    }
+
+
+def pareto_front(runs: list[RunRecord]) -> list[RunRecord]:
+    front: list[RunRecord] = []
+    for candidate in runs:
+        dominated = False
+        for other in runs:
+            if candidate.experiment_id == other.experiment_id:
+                continue
+            if (
+                other.metric_value <= candidate.metric_value
+                and other.peak_vram_gb <= candidate.peak_vram_gb
+                and (other.metric_value < candidate.metric_value or other.peak_vram_gb < candidate.peak_vram_gb)
+            ):
+                dominated = True
+                break
+        if not dominated:
+            front.append(candidate)
+    return sorted(front, key=lambda run: (run.metric_value, run.peak_vram_gb, run.complexity_cost))
 
 
 __all__ = [

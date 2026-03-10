@@ -21,7 +21,7 @@ Read them in order:
 ## How to use these specs
 
 - `product-specs/` explain **what** must exist and **how it must behave**
-- `reference_impl/` gives concrete algorithms for the trickiest parts
+- live semantics belong in `lab/` and `research/`; archived reference notes, when retained, live under `docs/archive/reference_impl/`
 - `schemas/` and `sql/` encode the machine-checkable form
 - `docs/runbook.md` explains the operator path
 - historical build and design material, when retained, lives under `docs/archive/`

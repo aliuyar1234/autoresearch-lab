@@ -1,7 +1,7 @@
 # Algorithmic appendix
 
 This document defines the intended algorithms for the novel parts of the lab.
-These algorithms are also mirrored in `reference_impl/`.
+Historical reference copies, when retained, live under `docs/archive/reference_impl/`. Live semantics belong in `lab/` and `research/`.
 
 Do not replace them with hand-wavy alternatives without a concrete reason.
 
@@ -50,7 +50,7 @@ Algorithm:
 4. SHA-256 the bytes
 5. store full hash and an 8-12 char short prefix for report readability
 
-Use `reference_impl/config_fingerprint.py`.
+Current runtime home: `research/dense_gpt/fingerprint.py`.
 
 ## 3. Offline packing
 
@@ -84,7 +84,7 @@ Windowed best-fit decreasing:
 
 This achieves the spirit of upstream best-fit packing while avoiding per-run Python packing cost.
 
-Use `reference_impl/offline_packing.py`.
+Current runtime home: `lab/campaigns/packing.py`.
 
 ## 4. Backend benchmark and cache
 
@@ -116,7 +116,7 @@ A backend cache key should include at least:
 4. cache the result
 5. if a candidate later fails during a real run, blacklist that backend+shape family and reselect
 
-Use `reference_impl/backend_selector.py`.
+Current runtime home: `lab/backends/selector.py`.
 
 ## 5. Proposal generation
 
@@ -160,7 +160,7 @@ Do not generate a proposal if the effective config fingerprint already exists in
 - champions
 - near-miss archive
 
-Use `reference_impl/scheduler_policy.py`.
+Current runtime homes: `lab/scheduler/select.py`, `lab/scheduler/compose.py`, and `lab/scheduler/novelty.py`.
 
 ## 6. Scheduler selection policy
 
@@ -222,7 +222,7 @@ Advance only if the candidate beats the main threshold and is not a complexity r
 #### Confirm -> Champion
 Promote only if confirm or audit survives according to campaign policy.
 
-Use `reference_impl/promotion_policy.py`.
+Current runtime home: `lab/scoring.py`.
 
 ## 8. Archive maintenance
 
@@ -245,7 +245,7 @@ Keep several buckets:
 5. **novel winners**
    - best representatives of under-covered regions
 
-Use `reference_impl/archive_policy.py`.
+Current runtime home: `lab/scheduler/archive.py`.
 
 ## 9. Crash classification
 
@@ -272,7 +272,7 @@ Algorithm:
 - choose the narrowest reliable class
 - store the excerpt and reason
 
-Use `reference_impl/crash_classifier.py`.
+Current runtime home: `lab/runner/failures.py`.
 
 ## 10. Morning report recommendations
 
@@ -286,7 +286,7 @@ Recommended rules:
 - if many near-misses cluster around one region, suggest focused exploration there
 - if improvements are consistently tiny and complex, suggest simplicity-preserving ablations
 
-Use `reference_impl/report_recommendations.py`.
+Current runtime home: `lab/reports/recommendations.py`.
 
 ## 11. Complexity cost
 
@@ -313,4 +313,4 @@ For the parity campaign:
 For sampled corpora:
 - deterministic partitioning with fixed seeds is required
 
-Use `reference_impl/campaign_split_rules.py`.
+Current runtime home: `lab/campaigns/split_rules.py`.

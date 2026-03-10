@@ -81,7 +81,6 @@ schemas/
 sql/
 templates/
 tools/
-reference_impl/
 lab/
 research/
 campaigns/

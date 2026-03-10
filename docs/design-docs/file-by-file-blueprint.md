@@ -131,7 +131,7 @@ Responsibilities:
 - map subprocess outcomes to crash class
 - normalize terminal failure structure
 
-Use `reference_impl/crash_classifier.py`.
+Crash classification now lives directly in `lab/runner/failures.py`.
 
 ### `lab/runner/execute.py`
 Responsibilities:
@@ -188,7 +188,7 @@ Should be easy to rerun and record.
 ### `lab/backends/cache.py`
 JSON cache for backend choices and blacklists.
 
-Use `reference_impl/backend_selector.py`.
+Backend selection now lives directly in `lab/backends/selector.py`.
 
 ## `lab/campaigns/`
 
@@ -215,8 +215,8 @@ Offline packer orchestration.
 Should call a pure packing function and write manifests.
 
 Use:
-- `reference_impl/offline_packing.py`
-- `reference_impl/campaign_split_rules.py`
+- `lab/campaigns/packing.py`
+- `lab/campaigns/split_rules.py`
 
 ## `lab/scheduler/`
 
@@ -245,9 +245,9 @@ Coverage tracking and novelty tags.
 Combine orthogonal winning changes into new proposals.
 
 Use:
-- `reference_impl/scheduler_policy.py`
-- `reference_impl/promotion_policy.py`
-- `reference_impl/archive_policy.py`
+- `lab/scheduler/select.py`
+- `lab/scoring.py`
+- `lab/scheduler/archive.py`
 
 ## `lab/reports/`
 
@@ -269,7 +269,7 @@ Crash summaries.
 ### `lab/reports/recommend.py`
 Inspectable recommendation heuristics.
 
-Use `reference_impl/report_recommendations.py`.
+Recommendation heuristics now live directly in `lab/reports/recommendations.py`.
 
 ## `lab/utils/`
 
@@ -341,9 +341,9 @@ Keep these small and explicit.
 Fake targets and sample JSON contracts.
 The pack now includes some of these.
 
-## `reference_impl/`
+## `docs/archive/reference_impl/`
 
-Reference algorithms for the hardest parts.
+Archived historical reference algorithms.
 
-These are starting points and guardrails.
-They are deliberately concrete so that Codex does not invent a weaker version of the lab.
+These are retained only as historical notes and parity breadcrumbs.
+Live runtime behavior must not depend on them.

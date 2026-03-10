@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-from reference_impl.campaign_split_rules import stories_split_for_document
+from ..split_rules import stories_split_for_document
 
 
 def collect_split_documents(source_root: Path, campaign: dict[str, object]) -> dict[str, list[dict[str, str]]]:

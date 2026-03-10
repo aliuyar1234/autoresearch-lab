@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from reference_impl.scheduler_policy import disjoint_mergeable
-
 
 def preferred_record_types(*, family: str, lane: str) -> tuple[str, ...]:
     mapping = {
@@ -50,3 +48,20 @@ def are_mergeable_parent_records(left: dict[str, Any], right: dict[str, Any]) ->
     if not left_overrides or not right_overrides:
         return False
     return disjoint_mergeable(left_overrides, right_overrides)
+
+
+def disjoint_mergeable(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_paths = {path for path, _ in _flatten_override_paths(left)}
+    right_paths = {path for path, _ in _flatten_override_paths(right)}
+    return left_paths.isdisjoint(right_paths)
+
+
+def _flatten_override_paths(payload: dict[str, Any], prefix: str = "") -> list[tuple[str, Any]]:
+    items: list[tuple[str, Any]] = []
+    for key, value in sorted(payload.items()):
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            items.extend(_flatten_override_paths(value, path))
+        else:
+            items.append((path, value))
+    return items

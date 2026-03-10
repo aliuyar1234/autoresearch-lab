@@ -83,12 +83,12 @@ The scheduler must understand:
 - novelty coverage
 - campaign boundaries
 
-Use `reference_impl/scheduler_policy.py`.
+Use the live scheduler modules under `lab/scheduler/`.
 
 ### 3. It may keep packing online
 Do not leave tokenization and best-fit packing in the hot training path for campaign builds that are supposed to be offline.
 
-Use `reference_impl/offline_packing.py` and the campaign asset model.
+Use `lab/campaigns/packing.py` and the campaign asset model.
 
 ### 4. It may use raw logs as agent input
 The lab must consume structured JSON summaries.
@@ -155,22 +155,13 @@ If it does not buy one of those, remove it.
 - campaign comparability semantics
 - report JSON contracts
 
-## When to use the reference implementations
+## Historical reference notes
 
-Use `reference_impl/` whenever the spec refers to a novel subsystem:
+If an older design doc points at `reference_impl/`, treat that as historical scaffolding.
 
-- scheduler policy
-- promotion decisions
-- archive maintenance
-- backend selection
-- crash classification
-- offline packing
-- report recommendation heuristics
-- config fingerprinting
-- campaign split rules
-
-Those files are not decorative.
-They are there to reduce drift.
+- live semantics now belong in `lab/` or `research/`
+- archived reference notes, when still useful, live under `docs/archive/reference_impl/`
+- do not reintroduce a runtime dependency on the archived copy
 
 ## Review checklist for every nontrivial change
 

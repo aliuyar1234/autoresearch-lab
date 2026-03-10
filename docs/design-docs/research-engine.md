@@ -141,7 +141,7 @@ A code proposal pack should contain:
 
 This gives Codex enough scaffolding to work without free-associating the product direction.
 
-## Reference implementation note
+## Runtime ownership note
 
-Scheduler generation, queue ranking, archive maintenance, and promotion rules are intentionally made concrete in `reference_impl/`.
-Use those semantics instead of inventing a weaker loop.
+Scheduler generation, queue ranking, archive maintenance, and promotion rules now live directly in the runtime modules under `lab/`.
+If an older note points to `reference_impl/`, treat it as archived historical context only.

@@ -26,7 +26,6 @@ The implementation should converge on approximately this layout.
 ├── templates/
 ├── tools/
 │   └── spec lint tool
-├── reference_impl/
 ├── lab/
 │   ├── __init__.py
 │   ├── version.py
@@ -88,8 +87,8 @@ Ledger schema.
 ### `templates/`
 Boilerplate for new campaigns and reports.
 
-### `reference_impl/`
-Historical reference algorithms still present in the repo. Live runtime behavior should not depend on them long-term.
+### `docs/archive/reference_impl/`
+Archived historical reference algorithms. Live runtime behavior must not depend on them.
 
 ### `artifacts/`
 Local output, never committed.

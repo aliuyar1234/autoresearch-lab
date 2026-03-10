@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable
 
-from reference_impl.promotion_policy import Candidate, Thresholds, decide_lane_promotion
-
 
 def improvement(direction: str, baseline: float, candidate: float) -> float:
     if direction == "min":
@@ -19,6 +17,32 @@ class BaselineRecord:
     experiment_id: str
     metric_value: float
     complexity_cost: int | None
+
+
+@dataclass(frozen=True)
+class Thresholds:
+    scout_to_main_min_delta: float
+    main_to_confirm_min_delta: float
+    champion_min_delta: float
+    tie_threshold: float
+    allow_complexity_tie_break: bool = True
+
+
+@dataclass(frozen=True)
+class Candidate:
+    metric_value: float
+    complexity_cost: int
+    audit_ok: bool = True
+    confirm_ok: bool = True
+    review_required: bool = False
+    comparable: bool = True
+    valid: bool = True
+
+
+@dataclass(frozen=True)
+class PromotionDecision:
+    disposition: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -246,3 +270,50 @@ def _validation_state_for_disposition(disposition: str, *, existing: str) -> str
     if disposition in {"archived", "discarded"} and existing == "pending":
         return "failed"
     return existing
+
+
+def decide_lane_promotion(
+    *,
+    lane: str,
+    direction: str,
+    baseline_metric: float,
+    candidate: Candidate,
+    thresholds: Thresholds,
+) -> PromotionDecision:
+    if not candidate.valid:
+        return PromotionDecision("failed", "invalid terminal run")
+    if not candidate.comparable:
+        return PromotionDecision("discarded", "not comparable")
+
+    delta = improvement(direction, baseline_metric, candidate.metric_value)
+
+    if lane == "scout":
+        needed = thresholds.scout_to_main_min_delta
+        if delta >= needed:
+            return PromotionDecision("promoted", f"scout improvement {delta:.6f} >= {needed:.6f}")
+        return PromotionDecision("discarded", f"scout improvement {delta:.6f} < {needed:.6f}")
+
+    if lane == "main":
+        needed = thresholds.main_to_confirm_min_delta
+        if delta >= needed:
+            return PromotionDecision("promoted", f"main improvement {delta:.6f} >= {needed:.6f}")
+        if thresholds.allow_complexity_tie_break and abs(delta) <= thresholds.tie_threshold and candidate.complexity_cost <= 1:
+            return PromotionDecision("archived", "main nearly tied but simpler")
+        return PromotionDecision("discarded", f"main improvement {delta:.6f} < {needed:.6f}")
+
+    if lane == "confirm":
+        needed = thresholds.champion_min_delta
+        if not candidate.audit_ok or not candidate.confirm_ok:
+            return PromotionDecision("discarded", "confirm candidate failed audit or confirm checks")
+        if delta >= needed:
+            if candidate.review_required:
+                return PromotionDecision(
+                    "pending_validation",
+                    f"champion improvement {delta:.6f} >= {needed:.6f}; pending validation review",
+                )
+            return PromotionDecision("promoted", f"champion improvement {delta:.6f} >= {needed:.6f}")
+        if thresholds.allow_complexity_tie_break and abs(delta) <= thresholds.tie_threshold and candidate.complexity_cost <= 1:
+            return PromotionDecision("archived", "confirm nearly tied but simpler")
+        return PromotionDecision("archived", f"confirm improvement {delta:.6f} < {needed:.6f}")
+
+    raise ValueError(f"unsupported lane: {lane}")

@@ -3,9 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from reference_impl.campaign_split_rules import stories_split_for_document
-
 from .campaigns import build_campaign, load_campaign, verify_campaign
+from .campaigns.split_rules import stories_split_for_document
 from .paths import LabPaths
 
 

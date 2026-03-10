@@ -6,10 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from reference_impl.report_recommendations import build_recommendations
-
 from ..paths import resolve_managed_path
 from ..proposals import normalize_proposal_payload
+from .recommendations import build_recommendations
 from ..scheduler.archive import build_archive_snapshot
 from ..scheduler.compose import flatten_override_paths
 from ..scheduler.exhaustion import exhaustion_summary

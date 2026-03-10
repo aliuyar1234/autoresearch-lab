@@ -186,7 +186,7 @@ For every phase:
 If blocked by an underspecified detail:
 
 1. choose the smallest implementation consistent with the architecture docs
-2. check whether `reference_impl/` already resolves the ambiguity
+2. check the owning runtime module first, then consult archived reference notes under `docs/archive/reference_impl/` if needed
 3. document the decision
 4. continue
 

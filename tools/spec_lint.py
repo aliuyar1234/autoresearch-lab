@@ -20,7 +20,6 @@ REQUIRED_FILES = [
     "docs/product-specs/index.md",
     "docs/product-specs/test-matrix.md",
     "docs/generated/resolved-ambiguities.md",
-    "reference_impl/README.md",
     "schemas/campaign.schema.json",
     "schemas/proposal.schema.json",
     "schemas/run_manifest.schema.json",
