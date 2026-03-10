@@ -159,18 +159,15 @@ Every design choice should pass these filters:
 4. Will a future agent be able to safely modify the research surface without breaking the lab layer?
 5. Does this preserve the repo’s single-GPU personality?
 
-## Build order
+## Current priorities
 
-Implement in this order only:
+When improving the repo further, prioritize in this order:
 
-1. Phase 0 - migration substrate
-2. Phase 1 - scientific correctness: eval splits + validation ladder
-3. Phase 2 - evidence-traced memory
-4. Phase 3 - compositional scheduler + negative memory
-5. Phase 4 - RTX PRO 6000 runtime autotune
-6. Phase 5 - evidence-grounded code lane
-7. Phase 6 - flagship showcase automation
-8. Phase 7 - identity cleanup + final signoff
+1. make live code own live semantics
+2. compress the common operator path
+3. harden recovery and report seams
+4. keep public claims tightly coupled to stored evidence
+5. prefer deletion and archive moves over new abstraction
 
 ## Required delivery discipline
 
@@ -181,7 +178,6 @@ For every phase:
 - add or update tests
 - run smoke checks
 - update docs if reality changes
-- update `docs/QUALITY_SCORE.md`
 - update `docs/generated/resolved-ambiguities.md` when a contract or interpretation changes
 - do not leave half-finished abstractions behind
 
@@ -221,6 +217,6 @@ The project is done when:
 
 1. `ARCHITECTURE.md`
 2. `CODEX_GUARDRAILS.md`
-3. `docs/design-docs/index.md`
+3. `docs/runbook.md`
 4. `docs/product-specs/index.md`
-5. `docs/PLANS.md`
+5. `showcase/the-remembering-scientist/README.md`

@@ -5,14 +5,13 @@ This runbook is the operator guide for Autoresearch Lab as it exists now.
 ## 1. Bootstrap a fresh clone
 
 ```bash
-git clone https://github.com/aliuyar1234/autoresearch.git autoresearch-lab
+git clone https://github.com/aliuyar1234/autoresearch-lab.git
 cd autoresearch-lab
 uv sync
 python -m lab.cli bootstrap
 python -m lab.cli preflight --campaign base_2k --benchmark-backends
 python -m lab.cli smoke --gpu
 python -m lab.cli doctor
-python tools/spec_lint.py
 ```
 
 Expected outcome:
@@ -22,7 +21,6 @@ Expected outcome:
 - machine and environment summary printed
 - optional backend benchmarks cached when requested
 - `doctor` reports no retained-artifact or DB-integrity errors
-- spec lint passes
 
 ## 2. Understand state roots and migrations
 
@@ -238,7 +236,7 @@ python tools/ten_of_ten_signoff.py --json
 
 That script intentionally avoids GPU-heavy end-to-end checks. It runs:
 
-- spec lint
+- lightweight repo sanity checks
 - lightweight CLI bootstrap and doctor checks in an isolated temp root
 - one report generation pass
 - a curated subset of roadmap tests

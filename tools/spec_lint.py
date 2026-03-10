@@ -14,11 +14,9 @@ PLACEHOLDER_TOKENS = [
 REQUIRED_FILES = [
     "AGENTS.md",
     "ARCHITECTURE.md",
+    "README.md",
     "CODEX_GUARDRAILS.md",
-    "docs/design-docs/index.md",
-    "docs/design-docs/file-by-file-blueprint.md",
-    "docs/design-docs/algorithmic-appendix.md",
-    "docs/design-docs/codex-drift-risks.md",
+    "docs/runbook.md",
     "docs/product-specs/index.md",
     "docs/product-specs/test-matrix.md",
     "docs/generated/resolved-ambiguities.md",

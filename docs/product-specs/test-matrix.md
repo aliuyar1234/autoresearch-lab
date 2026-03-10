@@ -13,7 +13,7 @@ The goal is to make the lab trustworthy where it matters.
 4. GPU tests must be tiny and targeted
 5. fake targets should cover the runner before real GPU coverage exists
 
-## Phase 0 tests
+## Core bootstrap and path tests
 
 ### Unit
 - `test_settings_precedence`
@@ -26,7 +26,7 @@ The goal is to make the lab trustworthy where it matters.
 - `test_bootstrap_creates_managed_roots`
 - `test_preflight_json_contract`
 
-## Phase 1 tests
+## Runner and artifact contract tests
 
 ### Unit
 - `test_crash_classifier_import_error`
@@ -42,7 +42,7 @@ The goal is to make the lab trustworthy where it matters.
 - `test_artifact_index_written`
 - `test_schema_validation_failure_marks_run_failed`
 
-## Phase 2 tests
+## Campaign and packing tests
 
 ### Unit
 - `test_campaign_manifest_validation`
@@ -56,7 +56,7 @@ The goal is to make the lab trustworthy where it matters.
 - `test_campaign_verify_detects_hash_mismatch`
 - `test_campaign_build_writes_manifests`
 
-## Phase 3 tests
+## Scoring and replay tests
 
 ### Unit
 - `test_promotion_rule_below_threshold`
@@ -69,7 +69,7 @@ The goal is to make the lab trustworthy where it matters.
 - `test_replay_creates_new_experiment_linked_to_source`
 - `test_pre_eval_checkpoint_retained_until_scored`
 
-## Phase 4 tests
+## Scheduler and archive tests
 
 ### Unit
 - `test_scheduler_respects_lane_mix`
@@ -82,7 +82,7 @@ The goal is to make the lab trustworthy where it matters.
 - `test_queue_fill_from_archive_state`
 - `test_export_code_proposal_pack_contract`
 
-## Phase 5 tests
+## Search surface and backend tests
 
 ### Unit
 - `test_search_space_legality`
@@ -95,7 +95,7 @@ The goal is to make the lab trustworthy where it matters.
 - `test_backend_selector_runs_microbench`
 - `test_config_summary_has_backend_and_device_profile`
 
-## Phase 6 tests
+## Reporting and unattended-session tests
 
 ### Integration
 - `test_report_generation`
@@ -104,7 +104,7 @@ The goal is to make the lab trustworthy where it matters.
 - `test_night_session_fake`
 - `test_report_contains_recommendations`
 
-## Phase 7 tests
+## Reliability and cleanup tests
 
 ### Unit
 - `test_cleanup_never_deletes_retained_classes`

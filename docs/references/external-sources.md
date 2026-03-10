@@ -20,7 +20,7 @@ Most relevant files:
 - `pyproject.toml`
 
 A local snapshot is included under:
-- `docs/references/upstream_snapshot/`
+- `docs/archive/references/upstream_snapshot/`
 
 ## 2. OpenAI — Harness engineering
 

@@ -216,6 +216,6 @@ They can surface memory citation coverage, repeated-dead-end metrics, validation
 ## What to read next
 
 1. `CODEX_GUARDRAILS.md`
-2. `docs/design-docs/index.md`
-3. `docs/design-docs/file-by-file-blueprint.md`
-4. `docs/design-docs/algorithmic-appendix.md`
+2. `docs/runbook.md`
+3. `docs/product-specs/index.md`
+4. `showcase/the-remembering-scientist/README.md`

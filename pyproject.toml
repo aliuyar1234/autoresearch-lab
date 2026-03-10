@@ -1,7 +1,7 @@
 [project]
 name = "autoresearch-lab"
 version = "0.1.0"
-description = "Single-GPU research lab with campaigns, validation, evidence memory, autotune, and showcase automation"
+description = "Single-GPU CUDA-first dense-model research lab with campaigns, validation, evidence memory, autotune, and showcase automation"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

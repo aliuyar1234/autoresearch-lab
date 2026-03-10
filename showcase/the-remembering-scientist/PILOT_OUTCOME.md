@@ -79,7 +79,7 @@ What the bounded pilot did show:
 What the bounded pilot did not show strongly enough yet:
 
 - a stable raw-to-confirm pipeline
-- a rich retrieval-citation story, because current repo schemas still do not log first-class `cited_memory_ids`
+- a rich retrieval-citation story inside this frozen pilot artifact set; the current repo now records stronger evidence and retrieval lineage than this run captured
 - a robust enough metric lane to support a loud flagship claim from one short pair alone
 
 ## Recommendation

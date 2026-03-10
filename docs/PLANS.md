@@ -1,75 +1,46 @@
 # Implementation plans overview
 
-This document is the high-level execution map for the current `8.6 -> 10` roadmap.
+This document describes the repo's current planning posture.
 
-The detailed work lives in `docs/exec-plans/active/`, but this file explains how the phases fit together and what must remain true across them.
+The historical buildout plans are archived under `docs/archive/exec-plans/`.
+They are useful as implementation history, not as the main operator path.
 
-## Phase order
+## Current priorities
 
-1. Phase 0 - migration substrate
-2. Phase 1 - scientific correctness: eval splits + validation ladder
-3. Phase 2 - evidence-traced memory
-4. Phase 3 - compositional scheduler + negative memory
-5. Phase 4 - RTX PRO 6000 runtime autotune
-6. Phase 5 - evidence-grounded code lane
-7. Phase 6 - flagship showcase automation
-8. Phase 7 - identity cleanup + final signoff
+The current direction is:
 
-## Why this order exists
+1. keep live code as the source of live semantics
+2. compress the common operator path
+3. harden the critical seams around run, night, report, doctor, and cleanup
+4. make reports and showcase claims sharper and more trustworthy
+5. archive or delete docs that no longer earn their keep
 
-The order is deliberate:
-
-- correctness comes before polish
-- evidence comes before public claims
-- runtime tuning comes after the scientific contract is stable
-- showcase work comes after validation, memory, and reporting are trustworthy
-- signoff comes last so docs and metadata describe the real system, not an aspiration
-
-## Cross-phase rules
-
-These rules apply throughout all phases:
+## What must remain true
 
 - structured artifacts and SQLite remain the control plane
-- migrations are additive files under `sql/`, never hidden bootstrap magic
+- migrations are additive files under `sql/`
 - proposal `family` and `kind` remain separate
 - campaign comparability is explicit, never inferred
 - raw search wins and validated champions are distinct states
-- memory citations, repeated-dead-end metrics, and validation pass rate stay first-class report concepts
 - runtime autotune may change execution overlays, not scientific identity
 - docs, specs, schemas, and tests move with code
 - new complexity must justify itself in throughput, reliability, or legibility
 
-## Required supporting references
-
-For every phase, consult:
+## Core references
 
 - `CODEX_GUARDRAILS.md`
 - `ARCHITECTURE.md`
 - `docs/runbook.md`
-- `docs/design-docs/file-by-file-blueprint.md`
-- `docs/design-docs/algorithmic-appendix.md`
-- `reference_impl/README.md`
+- `docs/product-specs/index.md`
 - `docs/product-specs/acceptance-matrix.md`
 - `docs/product-specs/ten-of-ten-signoff.md`
 
-## Phase completion checklist
+## Quality bar
 
-A phase is complete only when:
-
-- required files exist
-- required tests exist and pass
-- acceptance criteria in the phase doc are satisfied
-- docs/specs/schemas remain aligned
-- `docs/QUALITY_SCORE.md` reflects the current state
-- `docs/generated/resolved-ambiguities.md` records any contract-level interpretation change
-
-## Final quality bar
-
-The end state should feel like:
+The repo should feel like:
 
 - an actual local research organization
 - not a stitched-together MVP
 - not a generic framework
 - not a one-branch hill climber
-- not a lab that needs the human to remember hidden context
 - a repo that can defend its public claims with stored evidence

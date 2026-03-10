@@ -213,17 +213,6 @@ def _cmd_smoke(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS if smoke_ok else EXIT_PREFLIGHT_FAILURE
 
 
-def _cmd_unimplemented(args: argparse.Namespace) -> int:
-    payload = {
-        "ok": False,
-        "command": getattr(args, "command_name", args.command),
-        "status": "not_implemented",
-        "message": f"{getattr(args, 'command_name', args.command)} is not implemented in Phase 0",
-    }
-    _emit(payload, getattr(args, "json", False))
-    return EXIT_USER_ERROR
-
-
 def _cmd_campaign_list(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)

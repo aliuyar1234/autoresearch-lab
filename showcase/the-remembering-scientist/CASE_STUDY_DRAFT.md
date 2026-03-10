@@ -256,9 +256,9 @@ Two gaps matter most.
 
 The baseline noise note and the confirm regressions both point to the same issue: the current search metric is noisy enough that raw highlights are not dependable.
 
-### 2. Memory evidence is still indirect
+### 2. This pilot predates the strongest evidence fields
 
-The pilot runbook wanted memory to be visible. Right now the repo does not log first-class retrieval citations like `cited_memory_ids`. That means we can infer memory effects from trajectory and seeded state, but we cannot yet show a crisp retrieval-to-proposal-to-result chain in the strongest possible way.
+The pilot runbook wanted memory to be visible. The current repo now records first-class evidence and retrieval events, but this frozen pilot artifact set predates the stronger showcase wiring. That means these writeups still infer some memory effects from trajectory and seeded state instead of showing the cleanest possible retrieval-to-proposal-to-result chain.
 
 ## Recommended Internal Read
 

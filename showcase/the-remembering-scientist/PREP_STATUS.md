@@ -51,13 +51,15 @@ Pilot decision:
 
 ## Instrumentation And Fairness Gaps
 
+These notes describe the repo state at pilot-prep time. The current repo has since added first-class evidence and retrieval-event tracking, so read the gaps below as historical prep context rather than current product state.
+
 Current gaps discovered during prep:
 
-1. No first-class retrieval log
-   - there is no dedicated retrieval artifact with query text, ranked memory IDs, or attached memory items
+1. No first-class retrieval log in the prep snapshot
+   - the prep snapshot did not yet have a dedicated retrieval artifact with query text, ranked memory IDs, or attached memory items
 
-2. No schema-level `cited_memory_ids`
-   - `schemas/proposal.schema.json` does not currently record explicit memory citations
+2. No schema-level memory citation field in the prep snapshot
+   - the prep snapshot did not yet record explicit memory citations in the structured proposal payload
 
 3. No schema-level `cited_failure_ids`
    - failed-family references are not explicitly captured as structured fields
@@ -71,7 +73,7 @@ Current gaps discovered during prep:
 
 ## Practical Consequence
 
-The pilot can still be prepared honestly, but it cannot claim a rich retrieval-backed historical-memory story until a pre-pilot seed snapshot is created.
+At prep time, the pilot could still be prepared honestly, but it could not claim a rich retrieval-backed historical-memory story until a pre-pilot seed snapshot was created.
 
 ## Seed Snapshot Update
 

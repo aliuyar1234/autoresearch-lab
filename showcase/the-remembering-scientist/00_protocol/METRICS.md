@@ -25,10 +25,10 @@ These are the pilot's top-line metrics.
 
 ## Important Pilot Note
 
-For the bounded 12h pilot, "memory in action" is not yet a first-class schema feature. This means the pilot must treat memory evidence conservatively and explicitly document how it was inferred from:
+For the bounded 12h pilot, "memory in action" was not yet a first-class schema feature in the pilot snapshot. The current repo has stronger evidence and retrieval-event support, but this pilot should still treat memory evidence conservatively and explicitly document how it was inferred from:
 
 - prior experiment state available to the scheduler
 - parent proposal or experiment relationships
 - differences in proposal trajectory between the two arms
 
-If stronger retrieval evidence is required later, schema and logging work should happen before the full flagship.
+If stronger retrieval evidence is required for a refreshed flagship, the showcase outputs should be regenerated from the newer evidence-aware pipeline instead of restating this older pilot as if nothing changed.

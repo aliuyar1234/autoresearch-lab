@@ -2,6 +2,8 @@
 
 This directory holds the reproducible showcase pipeline for the flagship memory-vs-amnesia case study.
 
+The generated pilot notes in this directory are historical records from the first executed A/B pair. The current repo's evidence and retrieval lineage are stronger than some of those frozen writeups imply.
+
 The core claim is simple:
 
 `Same GPU. Same campaign. Same budget. The only difference was memory.`

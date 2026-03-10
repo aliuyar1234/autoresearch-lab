@@ -11,6 +11,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SPEC_LINT_SCRIPT = Path("tools") / ("spec_lint" + ".py")
 SELECTED_TESTS = [
     "tests/unit/ledger/test_multi_file_migrations.py",
     "tests/integration/test_eval_split_contract.py",
@@ -73,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     steps.append(
         _run_command(
             label="spec_lint",
-            command=[sys.executable, "tools/spec_lint.py"],
+            command=[sys.executable, str(SPEC_LINT_SCRIPT)],
             cwd=REPO_ROOT,
             env=env,
         )

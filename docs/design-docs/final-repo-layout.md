@@ -7,15 +7,17 @@ The implementation should converge on approximately this layout.
 ├── AGENTS.md
 ├── ARCHITECTURE.md
 ├── CODEX_GUARDRAILS.md
+├── README.md
+├── SHOWCASE.md
 ├── docs/
+│   ├── archive/
 │   ├── DESIGN.md
 │   ├── PLANS.md
 │   ├── PRODUCT_SENSE.md
-│   ├── QUALITY_SCORE.md
 │   ├── RELIABILITY.md
 │   ├── SECURITY.md
+│   ├── runbook.md
 │   ├── design-docs/
-│   ├── exec-plans/
 │   ├── generated/
 │   ├── product-specs/
 │   └── references/
@@ -23,7 +25,7 @@ The implementation should converge on approximately this layout.
 ├── sql/
 ├── templates/
 ├── tools/
-│   └── spec_lint.py
+│   └── spec lint tool
 ├── reference_impl/
 ├── lab/
 │   ├── __init__.py
@@ -54,6 +56,8 @@ The implementation should converge on approximately this layout.
 │   ├── base_2k/
 │   ├── stories_2k/
 │   └── long_4k/
+├── showcase/
+│   └── the-remembering-scientist/
 ├── tests/
 │   ├── unit/
 │   ├── integration/
@@ -85,7 +89,7 @@ Ledger schema.
 Boilerplate for new campaigns and reports.
 
 ### `reference_impl/`
-Concrete reference algorithms to reduce drift.
+Historical reference algorithms still present in the repo. Live runtime behavior should not depend on them long-term.
 
 ### `artifacts/`
 Local output, never committed.
@@ -97,7 +101,7 @@ Only change when phase docs or concrete bugs require it:
 - `lab/**`
 - `schemas/**`
 - `sql/**`
-- `tools/spec_lint.py`
+- `tools/spec lint tool`
 
 ### Research-owned files
 Safe mutation surface:
@@ -105,9 +109,8 @@ Safe mutation surface:
 
 ### Human-curated files
 - campaign manifests
-- design docs
-- acceptance criteria
-- core beliefs
+- runbook and showcase narrative
+- design docs and product specs
 - resolved ambiguity log
 
 ## Migration note

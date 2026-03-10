@@ -1,6 +1,6 @@
 # The Remembering Scientist - 12h Pilot Protocol
 
-Status: frozen for pilot preparation, official A/B sessions not started
+Status: historical frozen protocol used for the executed pilot
 
 ## Purpose
 

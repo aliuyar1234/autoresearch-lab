@@ -4,7 +4,7 @@ Autoresearch Lab is built around a simple idea:
 
 `A one-GPU research lab should get stronger when it can remember what it learned.`
 
-This first showcase draft is a bounded A/B pilot of that idea.
+This page summarizes the current showcase surface. The linked pilot notes are historical records from the first bounded A/B run, while the current repo now records first-class evidence and retrieval events in normal operation.
 
 Same GPU. Same campaign. Same budget. The only intended difference was memory.
 
@@ -155,9 +155,9 @@ This was one short A/B pair with confirms, not the larger multi-pair showcase pl
 
 The baseline noise note and the confirm regressions both point to the same thing: raw leaderboard wins are not reliable enough by themselves.
 
-### 3. Memory evidence is still partly indirect
+### 3. The published pilot artifacts predate the strongest evidence fields
 
-The repo does not yet log first-class retrieval citations like `cited_memory_ids`, so the memory story is inferred from seeded state and proposal trajectory rather than proven with perfect retrieval traces.
+The current repo does log first-class evidence and retrieval events. This particular frozen pilot was run before the showcase materials were regenerated around those stronger fields, so some of the linked writeups still rely partly on seeded state and proposal trajectory when explaining memory effects.
 
 ### 4. This does not prove broad superiority
 
