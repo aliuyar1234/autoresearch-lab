@@ -26,7 +26,7 @@ def run_night_session(
     device_profile: str | None = None,
     backend: str | None = None,
 ) -> dict[str, Any]:
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     resume_connection = connect(paths.db_path)
     try:
         resume_payload = resume_interrupted_state(

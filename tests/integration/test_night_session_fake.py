@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ._cli_helpers import PHASE6_TARGET, run_cli, target_json_command
+from ._cli_helpers import PHASE6_TARGET, missing_preflight_imports, run_cli, target_json_command
 
 
 def _phase6_target_command() -> str:
@@ -45,6 +45,10 @@ def _write_base_source_docs(source_root: Path) -> None:
         (source_root / name).write_text(text, encoding="utf-8")
 
 
+@unittest.skipIf(
+    bool(missing_preflight_imports()),
+    f"night integration requires preflight imports: {', '.join(missing_preflight_imports())}",
+)
 class NightSessionFakeTests(unittest.TestCase):
     def test_night_session_fake(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

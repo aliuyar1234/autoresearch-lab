@@ -3,13 +3,19 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from reference_impl.report_recommendations import build_recommendations
 
+from ..paths import resolve_managed_path
+from ..proposals import normalize_proposal_payload
 from ..scheduler.archive import build_archive_snapshot
 from ..scheduler.compose import flatten_override_paths
+from ..scheduler.exhaustion import exhaustion_summary
 from ..scoring import improvement
+from ..semantics import is_completed_metric_run, is_pending_validation, is_rankable_experiment, is_validated_promotion
+from ..utils import read_json
 
 
 def parse_iso_timestamp(value: str | None) -> datetime | None:
@@ -61,18 +67,24 @@ def build_daily_report(
     window_started_at: str | None,
     window_ended_at: str | None,
     generated_at: str,
+    repo_root: str,
     session_notes: list[str] | None = None,
 ) -> dict[str, Any]:
     header = _build_header(campaign, window_experiments, window_started_at=window_started_at, window_ended_at=window_ended_at)
     top_outcomes = _build_top_outcomes(campaign, window_experiments, all_experiments, leaderboard)
     what_changed = _build_what_changed(window_experiments)
     archive_updates = _build_archive_updates(window_experiments, all_experiments)
+    validation_summary = _build_validation_summary(window_experiments)
+    memory_summary = _build_memory_summary(window_experiments)
+    scheduler_metrics = _build_scheduler_metrics(window_experiments, all_experiments)
     recommendations = _build_recommendation_section(window_experiments)
     appendix = _build_appendix(
-        window_experiments,
+        campaign=campaign,
+        window_experiments=window_experiments,
         artifact_paths=artifact_paths,
         generated_at=generated_at,
         report_date=report_date,
+        repo_root=repo_root,
     )
     return {
         "report_type": "daily",
@@ -84,6 +96,13 @@ def build_daily_report(
         "what_changed": what_changed,
         "failure_summary": crash_summary,
         "archive_updates": archive_updates,
+        "validation_summary": validation_summary,
+        "memory_summary": memory_summary,
+        "repeated_dead_end_rate": scheduler_metrics["repeated_dead_end_rate"],
+        "memory_citation_coverage": scheduler_metrics["memory_citation_coverage"],
+        "negative_citation_coverage": scheduler_metrics["negative_citation_coverage"],
+        "composed_proposal_rate": scheduler_metrics["composed_proposal_rate"],
+        "validation_pass_rate": scheduler_metrics["validation_pass_rate"],
         "recommendations": recommendations,
         "session_notes": list(session_notes or []),
         "appendix": appendix,
@@ -156,6 +175,30 @@ def render_daily_report_markdown(report: dict[str, Any]) -> str:
     lines.append(f"- Newly archived near-misses: {', '.join(archive['newly_archived']) or 'none'}")
     lines.append(f"- Superseded champions: {', '.join(archive['superseded_champions']) or 'none'}")
 
+    lines.extend(["", "## Validation", ""])
+    validation = report["validation_summary"]
+    lines.append(f"- Pending validation: {validation['pending_count']}")
+    lines.append(f"- Confirm passes: {validation['confirm_pass_count']}")
+    lines.append(f"- Confirm fails: {validation['confirm_fail_count']}")
+    lines.append(f"- Audit reviews: {validation['audit_review_count']}")
+
+    lines.extend(["", "## Memory", ""])
+    memory_summary = report["memory_summary"]
+    lines.append(f"- Auto-generated proposals: {memory_summary['auto_generated_proposal_count']}")
+    lines.append(f"- Retrieval-backed proposals: {memory_summary['cited_proposal_count']}")
+    lines.append(f"- Negative citations present: {memory_summary['negative_cited_proposal_count']}")
+    lines.append(f"- Retrieval events observed: {memory_summary['retrieval_event_count']}")
+    lines.append(f"- Memory citation coverage: {_ratio_text(report['memory_citation_coverage'])}")
+    lines.append(f"- Negative citation coverage: {_ratio_text(report['negative_citation_coverage'])}")
+    lines.append(f"- Composed proposal rate: {_ratio_text(report['composed_proposal_rate'])}")
+    lines.append(f"- Repeated dead-end rate: {_ratio_text(report['repeated_dead_end_rate'])}")
+    lines.append(f"- Validation pass rate: {_ratio_text(report['validation_pass_rate'])}")
+    for example in memory_summary.get("top_retrieval_examples", [])[:3]:
+        lines.append(
+            f"- Retrieval example: {example['experiment_id']} cites {example['evidence_count']} memories"
+            + (f" ({example['retrieval_event_id']})" if example.get("retrieval_event_id") else "")
+        )
+
     lines.extend(["", "## Recommendations", ""])
     for note in report["recommendations"]["notes"]:
         lines.append(f"- {note}")
@@ -172,8 +215,21 @@ def render_daily_report_markdown(report: dict[str, Any]) -> str:
     lines.append("- Run table:")
     for row in report["appendix"]["run_table"]:
         metric_text = "n/a" if row["primary_metric_value"] is None else f"{row['primary_metric_value']:.6f}"
+        runtime_effective = row.get("runtime_effective") or {}
+        runtime_text = "runtime=n/a"
+        if isinstance(runtime_effective, dict) and runtime_effective:
+            runtime_text = (
+                f"runtime=db{runtime_effective.get('device_batch_size')} "
+                f"eval{runtime_effective.get('eval_batch_size')} "
+                f"compile={runtime_effective.get('compile_enabled')}"
+            )
+        headroom = row.get("vram_headroom_gb")
+        headroom_text = "headroom=n/a" if headroom is None else f"headroom={float(headroom):.3f}GB"
+        autotune_hit = row.get("autotune_cache_hit")
+        autotune_text = "autotune=n/a" if autotune_hit is None else f"autotune={'hit' if autotune_hit else 'miss'}"
         lines.append(
-            f"  - {row['experiment_id']} family={row['proposal_family']} lane={row['lane']} status={row['status']} metric={metric_text}"
+            f"  - {row['experiment_id']} family={row['proposal_family']} lane={row['lane']} status={row['status']} metric={metric_text} "
+            f"backend={row.get('backend')} {runtime_text} {headroom_text} {autotune_text}"
         )
     lines.append("")
     lines.append(f"Generated at: {report['appendix']['generation_metadata']['generated_at']}")
@@ -198,9 +254,7 @@ def _build_header(
         "device_profile": _most_common([row.get("device_profile") for row in window_experiments]),
         "total_runs_attempted": len(window_experiments),
         "total_successful_runs": sum(1 for row in window_experiments if str(row.get("status")) == "completed"),
-        "total_promoted_runs": sum(
-            1 for row in window_experiments if str(row.get("status")) == "completed" and str(row.get("disposition")) == "promoted"
-        ),
+        "total_promoted_runs": sum(1 for row in window_experiments if is_validated_promotion(row)),
         "total_failed_runs": sum(1 for row in window_experiments if str(row.get("status")) != "completed"),
     }
 
@@ -212,9 +266,9 @@ def _build_top_outcomes(
     leaderboard: dict[str, Any],
 ) -> dict[str, Any]:
     direction = str(campaign["primary_metric"]["direction"])
-    completed_window = [row for row in window_experiments if str(row.get("status")) == "completed" and row.get("primary_metric_value") is not None]
+    completed_window = [row for row in window_experiments if is_completed_metric_run(row) and is_rankable_experiment(row)]
     best_new = _top_metric_rows(completed_window, direction=direction, limit=3)
-    best_confirmed = _top_metric_rows([row for row in completed_window if str(row.get("lane")) == "confirm"], direction=direction, limit=3)
+    best_confirmed = _top_metric_rows([row for row in completed_window if is_validated_promotion(row)], direction=direction, limit=3)
     champion_update = _champion_update(campaign, window_experiments, all_experiments, leaderboard)
     return {
         "best_new_candidates": [_outcome_row(campaign, row, champion_update.get("previous_champion_metric")) for row in best_new],
@@ -238,7 +292,7 @@ def _build_what_changed(window_experiments: list[dict[str, Any]]) -> list[dict[s
             proposal_payload = _proposal_payload(row)
             for path, _ in flatten_override_paths(proposal_payload.get("config_overrides", {})):
                 knob_counter[path] += 1
-            if str(row.get("status")) == "completed" and str(row.get("disposition")) in {"promoted", "archived"}:
+            if is_completed_metric_run(row) and str(row.get("disposition")) in {"promoted", "archived", "pending_validation"}:
                 worked.append(str(row["experiment_id"]))
             if str(row.get("status")) != "completed":
                 failed.append(f"{row['experiment_id']} ({row.get('crash_class') or 'unknown'})")
@@ -246,7 +300,7 @@ def _build_what_changed(window_experiments: list[dict[str, Any]]) -> list[dict[s
             {
                 "family": family,
                 "run_count": len(rows),
-                "promoted_count": sum(1 for row in rows if str(row.get("disposition")) == "promoted"),
+                "promoted_count": sum(1 for row in rows if is_validated_promotion(row)),
                 "failed_count": sum(1 for row in rows if str(row.get("status")) != "completed"),
                 "top_knobs": [path for path, _ in knob_counter.most_common(5)],
                 "worked": ", ".join(worked[:3]) if worked else "",
@@ -259,7 +313,7 @@ def _build_what_changed(window_experiments: list[dict[str, Any]]) -> list[dict[s
 def _build_archive_updates(window_experiments: list[dict[str, Any]], all_experiments: list[dict[str, Any]]) -> dict[str, Any]:
     window_snapshot = build_archive_snapshot(window_experiments)
     full_snapshot = build_archive_snapshot(all_experiments)
-    promoted = [row["experiment_id"] for row in window_experiments if str(row.get("disposition")) == "promoted"]
+    promoted = [row["experiment_id"] for row in window_experiments if is_validated_promotion(row)]
     archived = [row["experiment_id"] for row in window_experiments if str(row.get("disposition")) == "archived"]
     full_champions = [entry["experiment_id"] for entry in full_snapshot.get("champions", [])]
     window_champions = [entry["experiment_id"] for entry in window_snapshot.get("champions", [])]
@@ -286,13 +340,13 @@ def _build_recommendation_section(window_experiments: list[dict[str, Any]]) -> d
             harmful_tags.extend(tags)
             continue
         disposition = str(row.get("disposition") or "")
-        if disposition in {"promoted", "archived"}:
+        if disposition in {"promoted", "archived", "pending_validation"}:
             helpful_tags.extend(tags)
         else:
             harmful_tags.extend(tags)
         if disposition == "archived":
             near_miss_count += 1
-        if disposition == "promoted" and str(row.get("lane")) == "confirm":
+        if is_validated_promotion(row):
             confirm_promotions += 1
 
     notes = build_recommendations(
@@ -306,24 +360,16 @@ def _build_recommendation_section(window_experiments: list[dict[str, Any]]) -> d
 
 
 def _build_appendix(
+    campaign: dict[str, Any],
     window_experiments: list[dict[str, Any]],
     *,
     artifact_paths: dict[str, str],
     generated_at: str,
     report_date: str,
+    repo_root: str,
 ) -> dict[str, Any]:
     run_table = [
-        {
-            "experiment_id": str(row["experiment_id"]),
-            "proposal_id": row.get("proposal_id"),
-            "proposal_family": row.get("proposal_family") or _proposal_payload(row).get("family"),
-            "proposal_kind": row.get("proposal_kind") or _proposal_payload(row).get("kind"),
-            "lane": row.get("lane"),
-            "status": row.get("status"),
-            "disposition": row.get("disposition"),
-            "primary_metric_value": float(row["primary_metric_value"]) if row.get("primary_metric_value") is not None else None,
-            "artifact_root": row.get("artifact_root"),
-        }
+        _appendix_row(campaign, row, repo_root=repo_root)
         for row in sorted(window_experiments, key=lambda item: str(item.get("started_at") or ""), reverse=True)
     ]
     return {
@@ -359,9 +405,7 @@ def _champion_update(
     prior_candidates = [
         row
         for row in all_experiments
-        if str(row.get("status")) == "completed"
-        and str(row.get("disposition")) == "promoted"
-        and row.get("primary_metric_value") is not None
+        if is_validated_promotion(row)
         and str(row["experiment_id"]) != str(current_champion["experiment_id"])
         and (current_dt is None or (_event_datetime(row) is not None and _event_datetime(row) < current_dt))
     ]
@@ -372,11 +416,149 @@ def _champion_update(
         delta = round(improvement(direction, float(previous_row["primary_metric_value"]), float(current_champion["primary_metric_value"])), 6)
     window_ids = {str(row["experiment_id"]) for row in window_experiments}
     return {
-        "new_champion_emerged": str(current_champion["experiment_id"]) in window_ids and str(current_champion.get("disposition")) == "promoted",
+        "new_champion_emerged": str(current_champion["experiment_id"]) in window_ids and is_validated_promotion(current_champion),
         "current_champion_experiment_id": str(current_champion["experiment_id"]),
         "previous_champion_experiment_id": str(previous_row["experiment_id"]) if previous_row else None,
         "previous_champion_metric": float(previous_row["primary_metric_value"]) if previous_row else None,
         "delta_vs_previous_champion": delta,
+    }
+
+
+def _appendix_row(campaign: dict[str, Any], row: dict[str, Any], *, repo_root: str) -> dict[str, Any]:
+    runtime = _load_runtime_appendix_payload(row, repo_root=repo_root)
+    peak_vram_gb = float(row.get("peak_vram_gb") or 0.0)
+    max_peak_vram_gb = float(campaign["runtime"].get("max_peak_vram_gb", 0.0) or 0.0)
+    return {
+        "experiment_id": str(row["experiment_id"]),
+        "proposal_id": row.get("proposal_id"),
+        "proposal_family": row.get("proposal_family") or _proposal_payload(row).get("family"),
+        "proposal_kind": row.get("proposal_kind") or _proposal_payload(row).get("kind"),
+        "lane": row.get("lane"),
+        "eval_split": row.get("eval_split"),
+        "run_purpose": row.get("run_purpose"),
+        "status": row.get("status"),
+        "disposition": row.get("disposition"),
+        "validation_state": row.get("validation_state"),
+        "validation_review_id": row.get("validation_review_id"),
+        "primary_metric_value": float(row["primary_metric_value"]) if row.get("primary_metric_value") is not None else None,
+        "artifact_root": row.get("artifact_root"),
+        "backend": row.get("backend"),
+        "device_profile": row.get("device_profile"),
+        "peak_vram_gb": peak_vram_gb,
+        "vram_headroom_gb": round(max_peak_vram_gb - peak_vram_gb, 6) if max_peak_vram_gb > 0 else None,
+        "autotune_cache_hit": runtime.get("autotune", {}).get("from_cache") if isinstance(runtime.get("autotune"), dict) else None,
+        "runtime_defaults": runtime.get("runtime_defaults"),
+        "runtime_overlay": runtime.get("runtime_overlay"),
+        "runtime_effective": runtime.get("runtime_effective"),
+        "autotune": runtime.get("autotune"),
+    }
+
+
+def _load_runtime_appendix_payload(row: dict[str, Any], *, repo_root: str) -> dict[str, Any]:
+    artifact_root = row.get("artifact_root")
+    if not artifact_root:
+        return {}
+    root = resolve_managed_path(_AppendixPaths(repo_root=Path(repo_root).resolve()), str(artifact_root))
+    manifest_path = root / "manifest.json"
+    if not manifest_path.exists():
+        return {}
+    manifest = read_json(manifest_path)
+    return {
+        "runtime_defaults": manifest.get("runtime_defaults"),
+        "runtime_overlay": manifest.get("runtime_overlay"),
+        "runtime_effective": manifest.get("runtime_effective"),
+        "autotune": manifest.get("autotune"),
+    }
+
+
+class _AppendixPaths:
+    def __init__(self, *, repo_root: Path) -> None:
+        self.repo_root = repo_root
+        self.artifacts_root = repo_root / "artifacts"
+        self.worktrees_root = repo_root / ".worktrees"
+
+
+def _build_validation_summary(window_experiments: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "pending_count": sum(1 for row in window_experiments if is_pending_validation(row)),
+        "pending_experiment_ids": [str(row["experiment_id"]) for row in window_experiments if is_pending_validation(row)],
+        "confirm_pass_count": sum(
+            1
+            for row in window_experiments
+            if str(row.get("lane")) == "confirm" and is_validated_promotion(row)
+        ),
+        "confirm_fail_count": sum(
+            1
+            for row in window_experiments
+            if str(row.get("lane")) == "confirm" and str(row.get("validation_state")) == "failed"
+        ),
+        "audit_review_count": sum(1 for row in window_experiments if str(row.get("run_purpose")) == "audit"),
+    }
+
+
+def _build_memory_summary(window_experiments: list[dict[str, Any]]) -> dict[str, Any]:
+    auto_generated = [row for row in window_experiments if _is_auto_generated(row)]
+    cited = [row for row in auto_generated if _proposal_payload(row).get("evidence")]
+    negative_cited = [
+        row
+        for row in auto_generated
+        if any(str(item.get("role") or "") == "warning" for item in _proposal_payload(row).get("evidence", []))
+    ]
+    top_examples = sorted(
+        [
+            {
+                "experiment_id": str(row["experiment_id"]),
+                "proposal_id": row.get("proposal_id"),
+                "retrieval_event_id": _proposal_payload(row).get("retrieval_event_id"),
+                "evidence_count": len(_proposal_payload(row).get("evidence", [])),
+                "roles": sorted({str(item.get("role") or "") for item in _proposal_payload(row).get("evidence", [])}),
+                "memory_ids": [str(item.get("memory_id") or "") for item in _proposal_payload(row).get("evidence", [])[:4]],
+            }
+            for row in cited
+        ],
+        key=lambda item: (-int(item["evidence_count"]), str(item["experiment_id"])),
+    )[:5]
+    return {
+        "auto_generated_proposal_count": len(auto_generated),
+        "cited_proposal_count": len(cited),
+        "negative_cited_proposal_count": len(negative_cited),
+        "retrieval_event_count": sum(1 for row in auto_generated if _proposal_payload(row).get("retrieval_event_id")),
+        "top_retrieval_examples": top_examples,
+    }
+
+
+def _build_scheduler_metrics(window_experiments: list[dict[str, Any]], all_experiments: list[dict[str, Any]]) -> dict[str, float | None]:
+    auto_generated = [row for row in window_experiments if _is_auto_generated(row)]
+    dead_end_denominator = [row for row in auto_generated if str(_proposal_payload(row).get("family") or "") != "ablation"]
+    repeated_dead_end_count = sum(1 for row in dead_end_denominator if _proposal_was_pre_exhausted(row, all_experiments))
+    memory_cited_count = sum(1 for row in auto_generated if _proposal_payload(row).get("evidence"))
+    negative_cited_count = sum(
+        1
+        for row in auto_generated
+        if any(str(item.get("role") or "") == "warning" for item in _proposal_payload(row).get("evidence", []))
+    )
+    composed_count = sum(
+        1
+        for row in auto_generated
+        if str(_proposal_payload(row).get("family") or "") == "combine"
+        or len(_proposal_payload(row).get("source_experiments") or []) >= 2
+    )
+    validation_pass_denominator = sum(
+        1
+        for row in window_experiments
+        if str(row.get("lane") or "") == "confirm" and str(row.get("validation_state") or "") in {"passed", "failed"}
+    )
+    validation_pass_count = sum(
+        1
+        for row in window_experiments
+        if str(row.get("lane") or "") == "confirm" and str(row.get("validation_state") or "") == "passed"
+    )
+    return {
+        "repeated_dead_end_rate": _safe_ratio(repeated_dead_end_count, len(dead_end_denominator)),
+        "memory_citation_coverage": _safe_ratio(memory_cited_count, len(auto_generated)),
+        "negative_citation_coverage": _safe_ratio(negative_cited_count, len(auto_generated)),
+        "composed_proposal_rate": _safe_ratio(composed_count, len(auto_generated)),
+        "validation_pass_rate": _safe_ratio(validation_pass_count, validation_pass_denominator),
     }
 
 
@@ -412,11 +594,48 @@ def _proposal_payload(row: dict[str, Any]) -> dict[str, Any]:
     if not raw:
         return {}
     payload = json.loads(raw)
-    return payload if isinstance(payload, dict) else {}
+    return normalize_proposal_payload(payload) if isinstance(payload, dict) else {}
 
 
 def _event_datetime(row: dict[str, Any]) -> datetime | None:
     return parse_iso_timestamp(str(row.get("ended_at") or row.get("started_at") or ""))
+
+
+def _proposal_created_datetime(row: dict[str, Any]) -> datetime | None:
+    return parse_iso_timestamp(str(_proposal_payload(row).get("created_at") or row.get("started_at") or ""))
+
+
+def _proposal_was_pre_exhausted(row: dict[str, Any], all_experiments: list[dict[str, Any]]) -> bool:
+    proposal = _proposal_payload(row)
+    signature = str(proposal.get("idea_signature") or row.get("idea_signature") or "")
+    if not signature:
+        return False
+    created_dt = _proposal_created_datetime(row)
+    prior = [
+        item
+        for item in all_experiments
+        if str(item.get("campaign_id") or "") == str(row.get("campaign_id") or "")
+        and str(item.get("experiment_id") or "") != str(row.get("experiment_id") or "")
+        and (created_dt is None or (_proposal_created_datetime(item) is not None and _proposal_created_datetime(item) < created_dt))
+    ]
+    stats = exhaustion_summary(prior, campaign_id=str(row.get("campaign_id") or "")).get(signature)
+    return bool(stats and stats.get("exhausted"))
+
+
+def _is_auto_generated(row: dict[str, Any]) -> bool:
+    return str(_proposal_payload(row).get("generator") or "") == "scheduler"
+
+
+def _safe_ratio(numerator: int, denominator: int) -> float | None:
+    if denominator <= 0:
+        return None
+    return round(float(numerator) / float(denominator), 4)
+
+
+def _ratio_text(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.2%}"
 
 
 def _most_common(values: list[Any]) -> Any:

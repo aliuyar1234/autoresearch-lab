@@ -16,6 +16,10 @@ class Proposal:
     complexity_cost: int
     config_overrides: dict[str, Any]
     priority_hint: int = 0
+    validated_anchor_quality: int = 0
+    evidence_count: int = 0
+    blocked_exhausted_count: int = 0
+    novelty_score: float = 0.0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -74,7 +78,11 @@ def rank_queue(proposals: list[Proposal], *, seen_fingerprints: set[str]) -> lis
         key=lambda p: (
             lane_rank.get(p.lane, 9),
             family_rank.get(p.family, 9),
+            -p.validated_anchor_quality,
+            -p.evidence_count,
+            p.blocked_exhausted_count,
             p.complexity_cost,
+            -float(p.novelty_score),
             -p.priority_hint,
             p.proposal_id,
         ),

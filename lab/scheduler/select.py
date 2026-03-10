@@ -73,6 +73,10 @@ def _rank_proposals(proposal_list: list[dict[str, Any]], *, seen_fingerprints: s
                 complexity_cost=int(item["complexity_cost"]),
                 config_overrides=dict(item.get("config_overrides", {})),
                 priority_hint=int(item.get("priority_hint", 0)),
+                validated_anchor_quality=int(item.get("validated_anchor_quality", 0)),
+                evidence_count=len(item.get("evidence", [])),
+                blocked_exhausted_count=len(item.get("generation_context", {}).get("blocked_idea_signatures", [])),
+                novelty_score=float(item.get("novelty_score", 0.0)),
             )
             for item in proposal_list
         ],

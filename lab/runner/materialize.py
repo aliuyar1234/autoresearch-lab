@@ -61,14 +61,21 @@ def materialize_run(
     time_budget_seconds: int,
     device_profile: str,
     backend: str,
+    eval_split: str = "search_val",
+    run_purpose: str = "search",
+    validation_review_id: str | None = None,
     replay_source_experiment_id: str | None = None,
+    resolved_config: dict[str, Any] | None = None,
+    config_fingerprint: str | None = None,
 ) -> MaterializedRun:
     experiment_id = allocate_experiment_id()
     created_at = utc_now_iso()
     run_root = experiment_root(paths, experiment_id)
     run_root.mkdir(parents=True, exist_ok=True)
-    resolved_config = resolve_dense_config(campaign, proposal.get("config_overrides", {}))
-    config_fingerprint = str(proposal.get("config_fingerprint") or short_fingerprint(resolved_config))
+    resolved_config = resolved_config or resolve_dense_config(campaign, proposal.get("config_overrides", {}))
+    config_fingerprint = str(config_fingerprint or proposal.get("config_fingerprint") or short_fingerprint(resolved_config))
+    runtime = resolved_config.get("runtime", {})
+    autotune_metadata = runtime.get("autotune") if isinstance(runtime.get("autotune"), dict) else None
 
     manifest = {
         "manifest_id": f"manifest_{experiment_id}",
@@ -76,6 +83,8 @@ def materialize_run(
         "proposal_id": proposal["proposal_id"],
         "campaign_id": campaign["campaign_id"],
         "lane": proposal["lane"],
+        "eval_split": eval_split,
+        "run_purpose": run_purpose,
         "seed": seed,
         "created_at": created_at,
         "working_directory": str(paths.repo_root),
@@ -94,7 +103,17 @@ def materialize_run(
         "pre_eval_meta_path": _relative_or_absolute(run_root / "checkpoints" / "pre_eval.meta.json", paths.repo_root),
         "summary_target_path": _relative_or_absolute(run_root / "summary.json", paths.repo_root),
         "env_capture": capture_env(),
+        "runtime_defaults": autotune_metadata.get("runtime_defaults") if autotune_metadata else None,
+        "runtime_overlay": autotune_metadata.get("runtime_overlay") if autotune_metadata else None,
+        "runtime_effective": {
+            "device_batch_size": int(runtime.get("device_batch_size", 1)),
+            "eval_batch_size": int(runtime.get("eval_batch_size", max(1, int(runtime.get("device_batch_size", 1)) // 2))),
+            "compile_enabled": bool(runtime.get("compile_enabled", True)),
+        },
+        "autotune": autotune_metadata,
     }
+    if validation_review_id is not None:
+        manifest["validation_review_id"] = validation_review_id
     if replay_source_experiment_id is not None:
         manifest["replay_source_experiment_id"] = replay_source_experiment_id
 

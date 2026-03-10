@@ -14,7 +14,7 @@ from lab.settings import load_settings
 from lab.paths import build_paths
 from lab.utils import utc_now_iso
 
-from ._cli_helpers import PHASE6_TARGET, REPO_ROOT, run_cli, target_json_command
+from ._cli_helpers import PHASE6_TARGET, REPO_ROOT, missing_preflight_imports, run_cli, target_json_command
 
 
 def _phase6_target_command() -> str:
@@ -97,6 +97,10 @@ def _proposal_payload(*, campaign_id: str, proposal_id: str, family: str, lane: 
     }
 
 
+@unittest.skipIf(
+    bool(missing_preflight_imports()),
+    f"resume integration requires preflight imports: {', '.join(missing_preflight_imports())}",
+)
 class ResumeQueueTests(unittest.TestCase):
     def test_resume_reconstructs_interrupted_queue(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -156,7 +160,7 @@ class ResumeQueueTests(unittest.TestCase):
                 status="running",
             )
 
-            apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+            apply_migrations(paths.db_path, paths.sql_root)
             connection = connect(paths.db_path)
             try:
                 timestamp = utc_now_iso()

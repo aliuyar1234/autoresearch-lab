@@ -18,6 +18,7 @@ class Candidate:
     complexity_cost: int
     audit_ok: bool = True
     confirm_ok: bool = True
+    review_required: bool = False
     comparable: bool = True
     valid: bool = True
 
@@ -70,6 +71,8 @@ def decide_lane_promotion(
         if not candidate.audit_ok or not candidate.confirm_ok:
             return Decision("discarded", "confirm candidate failed audit or confirm checks")
         if delta >= needed:
+            if candidate.review_required:
+                return Decision("pending_validation", f"champion improvement {delta:.6f} >= {needed:.6f}; pending validation review")
             return Decision("promoted", f"champion improvement {delta:.6f} >= {needed:.6f}")
         if thresholds.allow_complexity_tie_break and abs(delta) <= thresholds.tie_threshold and candidate.complexity_cost <= 1:
             return Decision("archived", "confirm nearly tied but simpler")

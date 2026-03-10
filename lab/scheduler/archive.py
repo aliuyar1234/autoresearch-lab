@@ -7,6 +7,7 @@ from typing import Any
 from reference_impl.archive_policy import RunRecord, archive_buckets
 
 from ..paths import LabPaths
+from ..semantics import is_completed_metric_run, is_rankable_experiment
 from ..utils import utc_now_iso, write_json
 from .novelty import novelty_tags
 
@@ -14,11 +15,11 @@ from .novelty import novelty_tags
 def build_archive_snapshot(experiments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     runs: list[RunRecord] = []
     for row in experiments:
-        if row.get("status") is not None and str(row.get("status")) != "completed":
+        if not is_completed_metric_run(row):
+            continue
+        if not is_rankable_experiment(row):
             continue
         metric_value = row.get("primary_metric_value")
-        if metric_value is None:
-            continue
         proposal_payload = _proposal_payload(row)
         runs.append(
             RunRecord(

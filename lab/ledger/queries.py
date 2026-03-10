@@ -4,7 +4,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .records import artifact_rows_from_index, campaign_row_from_manifest, experiment_row_from_summary, proposal_row_from_payload
+from ..proposals import normalize_proposal_payload
+from .records import (
+    artifact_rows_from_index,
+    campaign_row_from_manifest,
+    experiment_row_from_summary,
+    proposal_row_from_payload,
+    validation_review_row_from_payload,
+)
 
 
 def upsert_campaign(connection, manifest: dict[str, Any], *, timestamp: str) -> None:
@@ -37,11 +44,13 @@ def upsert_proposal(connection, proposal: dict[str, Any], *, updated_at: str | N
         """
         INSERT INTO proposals (
             proposal_id, campaign_id, family, kind, lane, status, generator, parent_ids_json,
-            complexity_cost, hypothesis, rationale, config_overrides_json, proposal_json,
+            complexity_cost, hypothesis, rationale, config_overrides_json, retrieval_event_id,
+            idea_signature, mutation_paths_json, proposal_json,
             created_at, updated_at
         ) VALUES (
             :proposal_id, :campaign_id, :family, :kind, :lane, :status, :generator, :parent_ids_json,
-            :complexity_cost, :hypothesis, :rationale, :config_overrides_json, :proposal_json,
+            :complexity_cost, :hypothesis, :rationale, :config_overrides_json, :retrieval_event_id,
+            :idea_signature, :mutation_paths_json, :proposal_json,
             :created_at, :updated_at
         )
         ON CONFLICT(proposal_id) DO UPDATE SET
@@ -56,6 +65,9 @@ def upsert_proposal(connection, proposal: dict[str, Any], *, updated_at: str | N
             hypothesis=excluded.hypothesis,
             rationale=excluded.rationale,
             config_overrides_json=excluded.config_overrides_json,
+            retrieval_event_id=excluded.retrieval_event_id,
+            idea_signature=excluded.idea_signature,
+            mutation_paths_json=excluded.mutation_paths_json,
             proposal_json=excluded.proposal_json,
             updated_at=excluded.updated_at
         """,
@@ -68,7 +80,7 @@ def set_proposal_status(connection, proposal_id: str, status: str, *, updated_at
     proposal_json = None
     if row and row["proposal_json"]:
         try:
-            payload = json.loads(row["proposal_json"])
+            payload = normalize_proposal_payload(json.loads(row["proposal_json"]))
         except Exception:
             payload = None
         if isinstance(payload, dict):
@@ -92,13 +104,15 @@ def upsert_experiment(
     connection.execute(
         """
         INSERT INTO experiments (
-            experiment_id, proposal_id, campaign_id, lane, status, disposition, crash_class,
+            experiment_id, proposal_id, campaign_id, lane, status, eval_split, run_purpose,
+            replay_source_experiment_id, validation_state, validation_review_id, idea_signature, disposition, crash_class,
             seed, git_commit, device_profile, backend, proposal_family, proposal_kind, complexity_cost,
             budget_seconds, primary_metric_name, primary_metric_value, metric_delta,
             tokens_per_second, peak_vram_gb, summary_path, artifact_root,
             started_at, ended_at, created_at, updated_at
         ) VALUES (
-            :experiment_id, :proposal_id, :campaign_id, :lane, :status, :disposition, :crash_class,
+            :experiment_id, :proposal_id, :campaign_id, :lane, :status, :eval_split, :run_purpose,
+            :replay_source_experiment_id, :validation_state, :validation_review_id, :idea_signature, :disposition, :crash_class,
             :seed, :git_commit, :device_profile, :backend, :proposal_family, :proposal_kind, :complexity_cost,
             :budget_seconds, :primary_metric_name, :primary_metric_value, :metric_delta,
             :tokens_per_second, :peak_vram_gb, :summary_path, :artifact_root,
@@ -106,6 +120,12 @@ def upsert_experiment(
         )
         ON CONFLICT(experiment_id) DO UPDATE SET
             status=excluded.status,
+            eval_split=excluded.eval_split,
+            run_purpose=excluded.run_purpose,
+            replay_source_experiment_id=excluded.replay_source_experiment_id,
+            validation_state=excluded.validation_state,
+            validation_review_id=excluded.validation_review_id,
+            idea_signature=excluded.idea_signature,
             disposition=excluded.disposition,
             crash_class=excluded.crash_class,
             seed=excluded.seed,
@@ -125,6 +145,75 @@ def upsert_experiment(
             artifact_root=excluded.artifact_root,
             started_at=excluded.started_at,
             ended_at=excluded.ended_at,
+            updated_at=excluded.updated_at
+        """,
+        row,
+    )
+
+
+def set_experiment_review_state(
+    connection,
+    experiment_id: str,
+    *,
+    disposition: str | None = None,
+    validation_state: str | None = None,
+    validation_review_id: str | None = None,
+    updated_at: str,
+) -> None:
+    existing = connection.execute(
+        "SELECT disposition, validation_state, validation_review_id FROM experiments WHERE experiment_id = ?",
+        (experiment_id,),
+    ).fetchone()
+    if existing is None:
+        raise FileNotFoundError(f"experiment not found: {experiment_id}")
+    connection.execute(
+        """
+        UPDATE experiments
+        SET disposition = ?,
+            validation_state = ?,
+            validation_review_id = ?,
+            updated_at = ?
+        WHERE experiment_id = ?
+        """,
+        (
+            disposition if disposition is not None else existing["disposition"],
+            validation_state if validation_state is not None else existing["validation_state"],
+            validation_review_id if validation_review_id is not None else existing["validation_review_id"],
+            updated_at,
+            experiment_id,
+        ),
+    )
+
+
+def upsert_validation_review(connection, payload: dict[str, Any]) -> None:
+    row = validation_review_row_from_payload(payload)
+    connection.execute(
+        """
+        INSERT INTO validation_reviews (
+            review_id, source_experiment_id, campaign_id, review_type, eval_split,
+            candidate_experiment_ids_json, comparator_experiment_ids_json, seed_list_json,
+            candidate_metric_median, comparator_metric_median, delta_median,
+            decision, reason, review_json, created_at, updated_at
+        ) VALUES (
+            :review_id, :source_experiment_id, :campaign_id, :review_type, :eval_split,
+            :candidate_experiment_ids_json, :comparator_experiment_ids_json, :seed_list_json,
+            :candidate_metric_median, :comparator_metric_median, :delta_median,
+            :decision, :reason, :review_json, :created_at, :updated_at
+        )
+        ON CONFLICT(review_id) DO UPDATE SET
+            source_experiment_id=excluded.source_experiment_id,
+            campaign_id=excluded.campaign_id,
+            review_type=excluded.review_type,
+            eval_split=excluded.eval_split,
+            candidate_experiment_ids_json=excluded.candidate_experiment_ids_json,
+            comparator_experiment_ids_json=excluded.comparator_experiment_ids_json,
+            seed_list_json=excluded.seed_list_json,
+            candidate_metric_median=excluded.candidate_metric_median,
+            comparator_metric_median=excluded.comparator_metric_median,
+            delta_median=excluded.delta_median,
+            decision=excluded.decision,
+            reason=excluded.reason,
+            review_json=excluded.review_json,
             updated_at=excluded.updated_at
         """,
         row,
@@ -157,6 +246,13 @@ def get_experiment(connection, experiment_id: str) -> dict[str, Any] | None:
 def get_proposal(connection, proposal_id: str) -> dict[str, Any] | None:
     row = connection.execute("SELECT * FROM proposals WHERE proposal_id = ?", (proposal_id,)).fetchone()
     return dict(row) if row else None
+
+
+def get_validation_review(connection, review_id: str) -> dict[str, Any] | None:
+    row = connection.execute("SELECT * FROM validation_reviews WHERE review_id = ?", (review_id,)).fetchone()
+    if not row:
+        return None
+    return _decode_validation_review_row(dict(row))
 
 
 def list_campaign_proposals(connection, campaign_id: str, *, statuses: list[str] | None = None) -> list[dict[str, Any]]:
@@ -197,6 +293,7 @@ def list_prior_experiments(connection, campaign_id: str, lane: str, *, exclude_e
     query = """
         SELECT * FROM experiments
         WHERE campaign_id = ? AND lane = ? AND status = 'completed'
+          AND COALESCE(run_purpose, 'search') IN ('search', 'baseline')
     """
     params: list[Any] = [campaign_id, lane]
     if exclude_experiment_id is not None:
@@ -205,6 +302,189 @@ def list_prior_experiments(connection, campaign_id: str, lane: str, *, exclude_e
     query += " ORDER BY ended_at ASC, experiment_id ASC"
     rows = connection.execute(query, params).fetchall()
     return [dict(row) for row in rows]
+
+
+def upsert_retrieval_event(connection, payload: dict[str, Any]) -> None:
+    connection.execute(
+        """
+        INSERT INTO retrieval_events (
+            retrieval_event_id, campaign_id, proposal_id, family, lane, query_text,
+            query_tags_json, query_payload_json, created_at
+        ) VALUES (
+            :retrieval_event_id, :campaign_id, :proposal_id, :family, :lane, :query_text,
+            :query_tags_json, :query_payload_json, :created_at
+        )
+        ON CONFLICT(retrieval_event_id) DO UPDATE SET
+            campaign_id=excluded.campaign_id,
+            proposal_id=excluded.proposal_id,
+            family=excluded.family,
+            lane=excluded.lane,
+            query_text=excluded.query_text,
+            query_tags_json=excluded.query_tags_json,
+            query_payload_json=excluded.query_payload_json
+        """,
+        {
+            "retrieval_event_id": payload["retrieval_event_id"],
+            "campaign_id": payload["campaign_id"],
+            "proposal_id": payload.get("proposal_id"),
+            "family": payload.get("family"),
+            "lane": payload.get("lane"),
+            "query_text": payload["query_text"],
+            "query_tags_json": json.dumps(payload.get("query_tags", []), sort_keys=True),
+            "query_payload_json": json.dumps(payload.get("query_payload", {}), sort_keys=True),
+            "created_at": payload["created_at"],
+        },
+    )
+
+
+def replace_retrieval_event_items(connection, *, retrieval_event_id: str, items: list[dict[str, Any]], created_at: str) -> None:
+    connection.execute("DELETE FROM retrieval_event_items WHERE retrieval_event_id = ?", (retrieval_event_id,))
+    for item in items:
+        connection.execute(
+            """
+            INSERT INTO retrieval_event_items (
+                retrieval_event_id, memory_id, rank, score, selected_for_context, role_hint, reason, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                retrieval_event_id,
+                item["memory_id"],
+                int(item["rank"]),
+                float(item["score"]),
+                1 if bool(item.get("selected_for_context")) else 0,
+                item.get("role_hint"),
+                item.get("reason"),
+                created_at,
+            ),
+        )
+
+
+def replace_proposal_evidence_links(
+    connection,
+    *,
+    proposal_id: str,
+    retrieval_event_id: str | None,
+    evidence: list[dict[str, Any]],
+    created_at: str,
+) -> None:
+    connection.execute("DELETE FROM proposal_evidence_links WHERE proposal_id = ?", (proposal_id,))
+    for item in evidence:
+        connection.execute(
+            """
+            INSERT INTO proposal_evidence_links (
+                proposal_id, memory_id, retrieval_event_id, role, score, reason, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                proposal_id,
+                item["memory_id"],
+                retrieval_event_id,
+                item["role"],
+                float(item.get("score") or 0.0),
+                item["reason"],
+                created_at,
+            ),
+        )
+
+
+def list_memory_records(
+    connection,
+    *,
+    campaign_id: str | None = None,
+    comparability_group: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    query = "SELECT * FROM memory_records WHERE 1 = 1"
+    params: list[Any] = []
+    if campaign_id is not None and comparability_group is not None:
+        query += " AND (campaign_id = ? OR comparability_group = ?)"
+        params.extend([campaign_id, comparability_group])
+    elif campaign_id is not None:
+        query += " AND campaign_id = ?"
+        params.append(campaign_id)
+    elif comparability_group is not None:
+        query += " AND comparability_group = ?"
+        params.append(comparability_group)
+    query += " ORDER BY updated_at DESC, memory_id ASC"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    rows = connection.execute(query, params).fetchall()
+    return [_decode_memory_row(dict(row)) for row in rows]
+
+
+def list_proposal_evidence_links(connection, proposal_id: str) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        """
+        SELECT proposal_id, memory_id, retrieval_event_id, role, score, reason, created_at
+        FROM proposal_evidence_links
+        WHERE proposal_id = ?
+        ORDER BY id ASC
+        """,
+        (proposal_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_retrieval_event(connection, retrieval_event_id: str) -> dict[str, Any] | None:
+    row = connection.execute("SELECT * FROM retrieval_events WHERE retrieval_event_id = ?", (retrieval_event_id,)).fetchone()
+    if row is None:
+        return None
+    items = connection.execute(
+        """
+        SELECT memory_id, rank, score, selected_for_context, role_hint, reason
+        FROM retrieval_event_items
+        WHERE retrieval_event_id = ?
+        ORDER BY rank ASC, id ASC
+        """,
+        (retrieval_event_id,),
+    ).fetchall()
+    payload = dict(row)
+    return {
+        "retrieval_event_id": payload["retrieval_event_id"],
+        "campaign_id": payload["campaign_id"],
+        "proposal_id": payload["proposal_id"],
+        "family": payload["family"],
+        "lane": payload["lane"],
+        "query_text": payload["query_text"],
+        "query_tags": json.loads(payload["query_tags_json"] or "[]"),
+        "query_payload": json.loads(payload["query_payload_json"] or "{}"),
+        "items": [
+            {
+                "memory_id": item["memory_id"],
+                "rank": int(item["rank"]),
+                "score": float(item["score"]),
+                "selected_for_context": bool(item["selected_for_context"]),
+                "role_hint": item["role_hint"],
+                "reason": item["reason"],
+            }
+            for item in items
+        ],
+        "created_at": payload["created_at"],
+    }
+
+
+def list_validation_reviews(
+    connection,
+    *,
+    campaign_id: str | None = None,
+    source_experiment_id: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    query = "SELECT * FROM validation_reviews WHERE 1 = 1"
+    params: list[Any] = []
+    if campaign_id is not None:
+        query += " AND campaign_id = ?"
+        params.append(campaign_id)
+    if source_experiment_id is not None:
+        query += " AND source_experiment_id = ?"
+        params.append(source_experiment_id)
+    query += " ORDER BY created_at DESC, review_id DESC"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    rows = connection.execute(query, params).fetchall()
+    return [_decode_validation_review_row(dict(row)) for row in rows]
 
 
 def list_proposal_experiments(connection, proposal_id: str) -> list[dict[str, Any]]:
@@ -388,3 +668,45 @@ def list_daily_reports(connection, campaign_id: str, *, limit: int | None = None
 def get_latest_daily_report(connection, campaign_id: str) -> dict[str, Any] | None:
     rows = list_daily_reports(connection, campaign_id, limit=1)
     return rows[0] if rows else None
+
+
+def _decode_validation_review_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "review_id": row["review_id"],
+        "source_experiment_id": row["source_experiment_id"],
+        "campaign_id": row["campaign_id"],
+        "review_type": row["review_type"],
+        "eval_split": row["eval_split"],
+        "candidate_experiment_ids": json.loads(row["candidate_experiment_ids_json"] or "[]"),
+        "comparator_experiment_ids": json.loads(row["comparator_experiment_ids_json"] or "[]"),
+        "seed_list": json.loads(row["seed_list_json"] or "[]"),
+        "candidate_metric_median": row["candidate_metric_median"],
+        "comparator_metric_median": row["comparator_metric_median"],
+        "delta_median": row["delta_median"],
+        "decision": row["decision"],
+        "reason": row["reason"],
+        "review": json.loads(row["review_json"] or "{}"),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _decode_memory_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "memory_id": row["memory_id"],
+        "campaign_id": row.get("campaign_id"),
+        "comparability_group": row.get("comparability_group"),
+        "record_type": row["record_type"],
+        "source_kind": row["source_kind"],
+        "source_ref": row["source_ref"],
+        "family": row.get("family"),
+        "lane": row.get("lane"),
+        "eval_split": row.get("eval_split"),
+        "outcome_label": row.get("outcome_label"),
+        "title": row["title"],
+        "summary": row["summary"],
+        "tags": json.loads(row.get("tags_json") or "[]"),
+        "payload": json.loads(row.get("payload_json") or "{}"),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }

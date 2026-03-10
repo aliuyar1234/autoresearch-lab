@@ -3,11 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from ..scoring import improvement
+from ..semantics import is_completed_metric_run, is_rankable_experiment, is_validated_promotion
 
 
 def build_leaderboard(campaign: dict[str, Any], experiments: list[dict[str, Any]]) -> dict[str, Any]:
     direction = str(campaign["primary_metric"]["direction"])
-    completed = [row for row in experiments if str(row.get("status")) == "completed" and row.get("primary_metric_value") is not None]
+    completed = [row for row in experiments if is_completed_metric_run(row) and is_rankable_experiment(row)]
     champion = _best_row(completed, direction=direction, promoted_only=True) or _best_row(completed, direction=direction, promoted_only=False)
     champion_metric = float(champion["primary_metric_value"]) if champion else None
 
@@ -26,6 +27,9 @@ def build_leaderboard(campaign: dict[str, Any], experiments: list[dict[str, Any]
                 "proposal_family": row.get("proposal_family"),
                 "proposal_kind": row.get("proposal_kind"),
                 "lane": row.get("lane"),
+                "eval_split": row.get("eval_split"),
+                "run_purpose": row.get("run_purpose"),
+                "validation_state": row.get("validation_state"),
                 "primary_metric_value": float(metric_value) if metric_value is not None else None,
                 "delta_vs_champion": delta_vs_champion,
                 "backend": row.get("backend"),
@@ -84,7 +88,7 @@ def render_leaderboard_markdown(leaderboard: dict[str, Any]) -> str:
 def _best_row(experiments: list[dict[str, Any]], *, direction: str, promoted_only: bool) -> dict[str, Any] | None:
     candidates = experiments
     if promoted_only:
-        candidates = [row for row in experiments if str(row.get("disposition")) == "promoted"]
+        candidates = [row for row in experiments if is_validated_promotion(row)]
     if not candidates:
         return None
     reverse = direction == "max"
@@ -103,7 +107,9 @@ def _sort_key(row: dict[str, Any], *, direction: str) -> tuple[Any, ...]:
     status = str(row.get("status") or "unknown")
     disposition = str(row.get("disposition") or "")
     status_rank = 0 if status == "completed" else 1
-    disposition_rank = {"promoted": 0, "archived": 1, "discarded": 2}.get(disposition, 3)
+    if str(row.get("run_purpose") or "search") not in {"search", "baseline"}:
+        status_rank += 1
+    disposition_rank = {"promoted": 0, "pending_validation": 1, "archived": 2, "discarded": 3}.get(disposition, 4)
     metric_value = row.get("primary_metric_value")
     if metric_value is None:
         metric_key = float("inf")

@@ -5,6 +5,7 @@ from typing import Any
 
 from ..scheduler.compose import flatten_override_paths
 from ..scoring import improvement
+from ..semantics import is_completed_metric_run, is_rankable_experiment, is_validated_promotion
 
 
 def build_champion_cards(campaign: dict[str, Any], experiments: list[dict[str, Any]]) -> dict[str, Any]:
@@ -12,9 +13,7 @@ def build_champion_cards(campaign: dict[str, Any], experiments: list[dict[str, A
     promoted = [
         row
         for row in experiments
-        if str(row.get("status")) == "completed"
-        and str(row.get("disposition")) == "promoted"
-        and row.get("primary_metric_value") is not None
+        if is_validated_promotion(row)
     ]
     promoted.sort(key=lambda row: (_timestamp_sort_key(row), str(row["experiment_id"])))
 
@@ -27,7 +26,7 @@ def build_champion_cards(campaign: dict[str, Any], experiments: list[dict[str, A
 
     if not cards:
         fallback = _best_metric(
-            [row for row in experiments if str(row.get("status")) == "completed" and row.get("primary_metric_value") is not None],
+            [row for row in experiments if is_completed_metric_run(row) and is_rankable_experiment(row)],
             direction=direction,
         )
         if fallback is not None:

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RetrievalEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "retrieval_event_id",
+    "campaign_id",
+    "query_text",
+    "query_tags",
+    "query_payload",
+    "items",
+    "created_at"
+  ],
+  "properties": {
+    "retrieval_event_id": {
+      "type": "string"
+    },
+    "campaign_id": {
+      "type": "string"
+    },
+    "proposal_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "family": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lane": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "query_text": {
+      "type": "string"
+    },
+    "query_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "query_payload": {
+      "type": "object"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "memory_id",
+          "rank",
+          "score",
+          "selected_for_context"
+        ],
+        "properties": {
+          "memory_id": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "integer"
+          },
+          "score": {
+            "type": "number"
+          },
+          "selected_for_context": {
+            "type": "boolean"
+          },
+          "role_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "created_at": {
+      "type": "string"
+    }
+  }
+}

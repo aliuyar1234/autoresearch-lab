@@ -18,9 +18,22 @@
   "complexity_cost": 1,
   "expected_direction": "improve",
   "tags": ["embed_lr", "exploit"],
+  "idea_signature": "sig_sample_embed_lr",
+  "mutation_paths": ["optimizer_groups.embed_lr_scale"],
+  "retrieval_event_id": null,
+  "evidence": [],
+  "generation_context": {
+    "family_selector_reason": "sample fixture",
+    "anchor_experiment_ids": ["exp_20260309_120000_0001"],
+    "blocked_idea_signatures": [],
+    "retrieval_event_id": null,
+    "selection_rank": 1,
+    "selection_score": 4.5
+  },
   "novelty_reason": null,
   "notes": null,
   "guardrails": {
     "max_peak_vram_gb": 92
-  }
+  },
+  "source_experiments": ["exp_20260309_120000_0001"]
 }

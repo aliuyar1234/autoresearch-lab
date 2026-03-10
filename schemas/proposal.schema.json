@@ -18,7 +18,12 @@
     "config_overrides",
     "complexity_cost",
     "expected_direction",
-    "tags"
+    "tags",
+    "idea_signature",
+    "mutation_paths",
+    "retrieval_event_id",
+    "evidence",
+    "generation_context"
   ],
   "properties": {
     "proposal_id": {
@@ -108,6 +113,112 @@
         "type": "string"
       }
     },
+    "idea_signature": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "mutation_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "retrieval_event_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "memory_id",
+          "record_type",
+          "role",
+          "score",
+          "reason",
+          "source_ref"
+        ],
+        "properties": {
+          "memory_id": {
+            "type": "string"
+          },
+          "record_type": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "supporting_precedent",
+              "warning",
+              "combination_parent",
+              "report_note"
+            ]
+          },
+          "score": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source_ref": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "generation_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family_selector_reason",
+        "anchor_experiment_ids",
+        "blocked_idea_signatures",
+        "retrieval_event_id",
+        "selection_rank",
+        "selection_score"
+      ],
+      "properties": {
+        "family_selector_reason": {
+          "type": "string"
+        },
+        "anchor_experiment_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blocked_idea_signatures": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retrieval_event_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection_rank": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "selection_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
     "novelty_reason": {
       "type": [
         "string",
@@ -179,6 +290,15 @@
         }
       },
       "additionalProperties": true
+    },
+    "source_experiments": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
     }
   }
 }

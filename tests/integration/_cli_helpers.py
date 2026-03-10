@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+from lab.preflight import REQUIRED_IMPORTS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -43,3 +46,7 @@ def run_cli(command: str, temp_root: Path, *extra_args: str) -> subprocess.Compl
 
 def target_json_command(parts: list[str]) -> str:
     return json.dumps(parts)
+
+
+def missing_preflight_imports() -> list[str]:
+    return [module_name for module_name in REQUIRED_IMPORTS if importlib.util.find_spec(module_name) is None]

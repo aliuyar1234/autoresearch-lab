@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MemoryRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "memory_id",
+    "record_type",
+    "source_kind",
+    "source_ref",
+    "title",
+    "summary",
+    "tags",
+    "payload",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "memory_id": {
+      "type": "string"
+    },
+    "campaign_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "comparability_group": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "record_type": {
+      "type": "string",
+      "enum": [
+        "experiment_result",
+        "failure_autopsy",
+        "champion_snapshot",
+        "validation_review",
+        "report_note"
+      ]
+    },
+    "source_kind": {
+      "type": "string"
+    },
+    "source_ref": {
+      "type": "string"
+    },
+    "family": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lane": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "eval_split": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "outcome_label": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "payload": {
+      "type": "object"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    }
+  }
+}

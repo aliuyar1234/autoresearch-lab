@@ -91,7 +91,7 @@ class SchedulerPolicyTests(unittest.TestCase):
             )
             paths = build_paths(settings)
             ensure_managed_roots(paths)
-            apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+            apply_migrations(paths.db_path, paths.sql_root)
             campaign = load_campaign(paths, "base_2k")
 
             connection = connect(paths.db_path)
@@ -134,7 +134,7 @@ class SchedulerPolicyTests(unittest.TestCase):
             )
             paths = build_paths(settings)
             ensure_managed_roots(paths)
-            apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+            apply_migrations(paths.db_path, paths.sql_root)
             campaign = load_campaign(paths, "base_2k")
 
             connection = connect(paths.db_path)
@@ -164,7 +164,7 @@ class SchedulerPolicyTests(unittest.TestCase):
             )
             paths = build_paths(settings)
             ensure_managed_roots(paths)
-            apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+            apply_migrations(paths.db_path, paths.sql_root)
             campaign = load_campaign(paths, "base_2k")
 
             baseline = _proposal(proposal_id="p_base_2k_baseline_scout_0001", family="baseline", overrides={})

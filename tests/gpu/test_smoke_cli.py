@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.integration._cli_helpers import run_cli
+from tests.integration._cli_helpers import missing_preflight_imports, run_cli
 
 
 def _has_cuda() -> bool:
@@ -17,7 +17,7 @@ def _has_cuda() -> bool:
         return False
 
 
-@unittest.skipUnless(_has_cuda(), "CUDA is required for GPU smoke tests")
+@unittest.skipUnless(_has_cuda() and not missing_preflight_imports(), "CUDA plus preflight dependencies are required for GPU smoke tests")
 class SmokeCliGpuTests(unittest.TestCase):
     def test_smoke_cli_gpu(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ValidationReview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_id",
+    "source_experiment_id",
+    "campaign_id",
+    "review_type",
+    "eval_split",
+    "candidate_experiment_ids",
+    "comparator_experiment_ids",
+    "seed_list",
+    "decision",
+    "reason",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "review_id": {
+      "type": "string"
+    },
+    "source_experiment_id": {
+      "type": "string"
+    },
+    "campaign_id": {
+      "type": "string"
+    },
+    "review_type": {
+      "type": "string",
+      "enum": [
+        "confirm",
+        "audit",
+        "locked"
+      ]
+    },
+    "eval_split": {
+      "type": "string",
+      "enum": [
+        "search_val",
+        "audit_val",
+        "locked_val"
+      ]
+    },
+    "candidate_experiment_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "comparator_experiment_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "seed_list": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "candidate_metric_median": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "comparator_metric_median": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "delta_median": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "passed",
+        "failed"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "review": {
+      "type": "object"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    }
+  }
+}

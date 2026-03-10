@@ -26,6 +26,8 @@ class ScoreExplanation:
     experiment_id: str
     campaign_id: str
     lane: str
+    run_purpose: str
+    eval_split: str
     baseline_experiment_id: str | None
     baseline_metric_value: float | None
     candidate_metric_value: float
@@ -36,6 +38,7 @@ class ScoreExplanation:
     complexity_cost: int | None
     complexity_tie_break_applied: bool
     final_disposition: str
+    validation_state: str
     archive_effect: str
     reason: str
 
@@ -82,12 +85,18 @@ def explain_experiment_score(
     tie_threshold = float(campaign["primary_metric"]["tie_threshold"])
     candidate_metric = float(experiment["primary_metric_value"])
     complexity_cost = int(experiment["complexity_cost"]) if experiment.get("complexity_cost") is not None else 0
+    run_purpose = str(experiment.get("run_purpose") or "search")
+    eval_split = str(experiment.get("eval_split") or "search_val")
+    validation_state = str(experiment.get("validation_state") or "not_required")
+    review_required = _requires_validation(experiment)
 
     if str(experiment["status"]) != "completed":
         return ScoreExplanation(
             experiment_id=str(experiment["experiment_id"]),
             campaign_id=str(experiment["campaign_id"]),
             lane=str(experiment["lane"]),
+            run_purpose=run_purpose,
+            eval_split=eval_split,
             baseline_experiment_id=baseline.experiment_id if baseline else None,
             baseline_metric_value=baseline.metric_value if baseline else None,
             candidate_metric_value=candidate_metric,
@@ -98,15 +107,39 @@ def explain_experiment_score(
             complexity_cost=complexity_cost,
             complexity_tie_break_applied=False,
             final_disposition="failed",
+            validation_state=validation_state,
             archive_effect="crash_exemplar",
             reason="invalid terminal run",
         )
 
     if baseline is None:
+        if review_required:
+            return ScoreExplanation(
+                experiment_id=str(experiment["experiment_id"]),
+                campaign_id=str(experiment["campaign_id"]),
+                lane=str(experiment["lane"]),
+                run_purpose=run_purpose,
+                eval_split=eval_split,
+                baseline_experiment_id=None,
+                baseline_metric_value=None,
+                candidate_metric_value=candidate_metric,
+                metric_direction=direction,
+                metric_delta=None,
+                promotion_threshold=threshold,
+                tie_threshold=tie_threshold,
+                complexity_cost=complexity_cost,
+                complexity_tie_break_applied=False,
+                final_disposition="pending_validation",
+                validation_state="pending",
+                archive_effect="await_validation",
+                reason="confirm candidate has no prior comparable champion; pending validation review",
+            )
         return ScoreExplanation(
             experiment_id=str(experiment["experiment_id"]),
             campaign_id=str(experiment["campaign_id"]),
             lane=str(experiment["lane"]),
+            run_purpose=run_purpose,
+            eval_split=eval_split,
             baseline_experiment_id=None,
             baseline_metric_value=None,
             candidate_metric_value=candidate_metric,
@@ -117,6 +150,7 @@ def explain_experiment_score(
             complexity_cost=complexity_cost,
             complexity_tie_break_applied=False,
             final_disposition="promoted",
+            validation_state=validation_state,
             archive_effect=_archive_effect_for_disposition(str(experiment["lane"]), "promoted"),
             reason="no prior comparable baseline; established lane baseline",
         )
@@ -130,6 +164,7 @@ def explain_experiment_score(
             complexity_cost=complexity_cost,
             audit_ok=True,
             confirm_ok=True,
+            review_required=review_required,
             comparable=True,
             valid=True,
         ),
@@ -146,6 +181,8 @@ def explain_experiment_score(
         experiment_id=str(experiment["experiment_id"]),
         campaign_id=str(experiment["campaign_id"]),
         lane=str(experiment["lane"]),
+        run_purpose=run_purpose,
+        eval_split=eval_split,
         baseline_experiment_id=baseline.experiment_id,
         baseline_metric_value=baseline.metric_value,
         candidate_metric_value=candidate_metric,
@@ -156,6 +193,7 @@ def explain_experiment_score(
         complexity_cost=complexity_cost,
         complexity_tie_break_applied="nearly tied but simpler" in decision.reason,
         final_disposition=decision.disposition,
+        validation_state=_validation_state_for_disposition(decision.disposition, existing=validation_state),
         archive_effect=_archive_effect_for_disposition(str(experiment["lane"]), decision.disposition),
         reason=decision.reason,
     )
@@ -179,6 +217,8 @@ def _archive_effect_for_disposition(lane: str, disposition: str) -> str:
         return "discard"
     if disposition == "archived":
         return "near_miss_archive"
+    if disposition == "pending_validation":
+        return "await_validation"
     if disposition != "promoted":
         return "unknown"
     if lane == "scout":
@@ -188,3 +228,21 @@ def _archive_effect_for_disposition(lane: str, disposition: str) -> str:
     if lane == "confirm":
         return "champion"
     return "unknown"
+
+
+def _requires_validation(experiment: dict[str, Any]) -> bool:
+    return (
+        str(experiment.get("lane")) == "confirm"
+        and str(experiment.get("run_purpose") or "search") in {"search", "baseline"}
+        and str(experiment.get("validation_state") or "not_required") != "passed"
+    )
+
+
+def _validation_state_for_disposition(disposition: str, *, existing: str) -> str:
+    if disposition == "pending_validation":
+        return "pending"
+    if disposition == "promoted":
+        return "passed" if existing == "passed" else existing
+    if disposition in {"archived", "discarded"} and existing == "pending":
+        return "failed"
+    return existing

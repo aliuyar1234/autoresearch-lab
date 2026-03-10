@@ -23,6 +23,8 @@ def main() -> int:
     parser.add_argument("--proposal-id", required=True)
     parser.add_argument("--campaign-id", required=True)
     parser.add_argument("--lane", required=True)
+    parser.add_argument("--eval-split", default="search_val")
+    parser.add_argument("--run-purpose", default="search")
     parser.add_argument("--backend", default="test_backend")
     parser.add_argument("--device-profile", default="test_profile")
     args = parser.parse_args()
@@ -45,6 +47,11 @@ def main() -> int:
         "campaign_id": args.campaign_id,
         "lane": args.lane,
         "status": "completed",
+        "eval_split": args.eval_split,
+        "run_purpose": args.run_purpose,
+        "validation_state": "not_required",
+        "validation_review_id": os.environ.get("LAB_VALIDATION_REVIEW_ID"),
+        "replay_source_experiment_id": os.environ.get("LAB_REPLAY_SOURCE_EXPERIMENT_ID"),
         "primary_metric_name": "val_bpb",
         "primary_metric_value": metric,
         "budget_seconds": 1,
@@ -63,7 +70,7 @@ def main() -> int:
         "git_commit": "phase6fixture",
         "warnings": [],
         "checkpoint_path": None,
-        "summary_version": "1.0.0",
+        "summary_version": "1.1.0",
     }
     summary_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return 0

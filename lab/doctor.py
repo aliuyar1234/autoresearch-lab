@@ -13,7 +13,7 @@ RETAINED_RETENTION_CLASSES = ("full", "promoted", "champion", "crash_exemplar", 
 
 
 def run_doctor(paths, *, campaign_id: str | None = None) -> dict[str, Any]:
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     findings: list[dict[str, Any]] = []
     schema_versions = list_schema_versions(paths.db_path)
     repo_marker_gaps = missing_repo_markers(paths.repo_root)

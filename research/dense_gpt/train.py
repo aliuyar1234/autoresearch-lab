@@ -30,6 +30,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--proposal-id", required=True)
     parser.add_argument("--campaign-id", required=True)
     parser.add_argument("--lane", required=True)
+    parser.add_argument("--eval-split", default="search_val")
+    parser.add_argument("--run-purpose", default="search")
     parser.add_argument("--backend", default="sdpa")
     parser.add_argument("--device-profile", default="generic_single_gpu_nvidia")
     parser.add_argument("--repo-root")
@@ -91,9 +93,9 @@ def main(argv: list[str] | None = None) -> int:
     paths = build_paths(settings)
     campaign = load_campaign(paths, args.campaign_id)
 
-    train_blocks, eval_blocks = _load_blocks(paths, campaign, tiny=args.tiny)
+    train_blocks, eval_blocks = _load_blocks(paths, campaign, eval_split=args.eval_split, tiny=args.tiny)
 
-    config_hash = short_fingerprint(config)
+    config_hash = str(os.environ.get("LAB_CONFIG_FINGERPRINT") or short_fingerprint(config))
     model_config = DenseGPTConfig.from_resolved_config(config, backend=args.backend)
     model = DenseGPT(model_config).to(device)
     run_model = model
@@ -180,6 +182,11 @@ def main(argv: list[str] | None = None) -> int:
         "campaign_id": args.campaign_id,
         "lane": args.lane,
         "status": "completed",
+        "eval_split": args.eval_split,
+        "run_purpose": args.run_purpose,
+        "validation_state": "not_required",
+        "validation_review_id": os.environ.get("LAB_VALIDATION_REVIEW_ID"),
+        "replay_source_experiment_id": os.environ.get("LAB_REPLAY_SOURCE_EXPERIMENT_ID"),
         "primary_metric_name": campaign["primary_metric"]["name"],
         "primary_metric_value": primary_metric_value,
         "budget_seconds": int(args.time_budget_seconds),
@@ -198,28 +205,36 @@ def main(argv: list[str] | None = None) -> int:
         "git_commit": os.environ.get("LAB_PARENT_COMMIT", "unknown"),
         "warnings": warnings,
         "checkpoint_path": checkpoint_path if checkpoint_path and Path(checkpoint_path).exists() else None,
-        "summary_version": "1.0.0",
+        "summary_version": "1.1.0",
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
         "ended_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "data_mode": "campaign_assets",
         "effective_device_batch_size": device_batch_size,
         "effective_eval_batch_size": effective_eval_batch_size,
         "total_seconds": round(total_seconds, 6),
+        "runtime_defaults": runtime.get("autotune", {}).get("runtime_defaults"),
+        "runtime_overlay": runtime.get("autotune", {}).get("runtime_overlay"),
+        "runtime_effective": {
+            "device_batch_size": device_batch_size,
+            "eval_batch_size": effective_eval_batch_size,
+            "compile_enabled": bool(runtime.get("compile_enabled", False)),
+        },
+        "autotune": runtime.get("autotune"),
     }
     write_json(summary_path, payload)
     return 0
 
 
-def _load_blocks(paths, campaign: dict[str, Any], *, tiny: bool) -> tuple[list[list[int]], list[list[int]]]:
+def _load_blocks(paths, campaign: dict[str, Any], *, eval_split: str, tiny: bool) -> tuple[list[list[int]], list[list[int]]]:
     asset_root = resolve_asset_root(paths, campaign)
     packed_manifest_path = asset_root / campaign["assets"]["packed_manifest"]
     if not packed_manifest_path.exists():
         raise FileNotFoundError(f"missing packed campaign manifest: {packed_manifest_path}")
     manifest = read_json(packed_manifest_path)
     train_files = [entry for entry in manifest.get("files", []) if entry.get("split") == "train"]
-    eval_files = [entry for entry in manifest.get("files", []) if entry.get("split") in {"search_val", "audit_val", "locked_val"}]
+    eval_files = [entry for entry in manifest.get("files", []) if entry.get("split") == eval_split]
     if not train_files or not eval_files:
-        raise RuntimeError(f"campaign packed manifest is missing required train/eval splits: {packed_manifest_path}")
+        raise RuntimeError(f"campaign packed manifest is missing required train/{eval_split} splits: {packed_manifest_path}")
     train_blocks = _read_block_files(asset_root, train_files, max_blocks=512 if tiny else 2048)
     eval_blocks = _read_block_files(asset_root, eval_files, max_blocks=64 if tiny else 256)
     if not train_blocks or not eval_blocks:

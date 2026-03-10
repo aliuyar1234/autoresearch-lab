@@ -4,12 +4,14 @@ from pathlib import Path
 from typing import Any
 
 from ..ledger.queries import upsert_daily_report
+from ..memory import ingest_report_memory
 from ..paths import LabPaths, report_root
 from ..utils import utc_now_iso, write_json
 from .champion import build_champion_cards, render_champion_cards_markdown
 from .crashes import build_crash_summary, render_crash_summary_markdown
 from .daily import build_daily_report, filter_experiments_for_window, render_daily_report_markdown
 from .leaderboard import build_leaderboard, render_leaderboard_markdown
+from ..semantics import is_validated_promotion
 
 
 def generate_report_bundle(
@@ -53,6 +55,7 @@ def generate_report_bundle(
         window_started_at=started_at,
         window_ended_at=ended_at,
         generated_at=generated_at,
+        repo_root=str(paths.repo_root),
         session_notes=session_notes,
     )
 
@@ -73,9 +76,16 @@ def generate_report_bundle(
         report_path=artifact_paths["report_md"],
         report_json_path=artifact_paths["report_json"],
         run_count=len(window_experiments),
-        promoted_count=sum(1 for row in window_experiments if str(row.get("disposition")) == "promoted"),
+        promoted_count=sum(1 for row in window_experiments if is_validated_promotion(row)),
         failed_count=sum(1 for row in window_experiments if str(row.get("status")) != "completed"),
         created_at=generated_at,
+    )
+    ingest_report_memory(
+        connection,
+        paths=paths,
+        campaign=campaign,
+        report=report_payload,
+        report_json_path=artifact_paths["report_json"],
     )
 
     return {
@@ -85,13 +95,19 @@ def generate_report_bundle(
         "report_root": str(root),
         "artifact_paths": artifact_paths,
         "run_count": len(window_experiments),
-        "promoted_count": sum(1 for row in window_experiments if str(row.get("disposition")) == "promoted"),
+        "promoted_count": sum(1 for row in window_experiments if is_validated_promotion(row)),
         "failed_count": sum(1 for row in window_experiments if str(row.get("status")) != "completed"),
         "window_started_at": report_payload["header"]["window_started_at"],
         "window_ended_at": report_payload["header"]["window_ended_at"],
         "session_notes": report_payload.get("session_notes", []),
         "recommendations": report_payload["recommendations"]["notes"],
         "latest_champion_experiment_id": leaderboard.get("champion_experiment_id"),
+        "memory_summary": report_payload.get("memory_summary", {}),
+        "repeated_dead_end_rate": report_payload.get("repeated_dead_end_rate"),
+        "memory_citation_coverage": report_payload.get("memory_citation_coverage"),
+        "negative_citation_coverage": report_payload.get("negative_citation_coverage"),
+        "composed_proposal_rate": report_payload.get("composed_proposal_rate"),
+        "validation_pass_rate": report_payload.get("validation_pass_rate"),
     }
 
 

@@ -8,6 +8,9 @@
     "campaign_id",
     "lane",
     "status",
+    "eval_split",
+    "run_purpose",
+    "validation_state",
     "budget_seconds",
     "primary_metric_name",
     "primary_metric_value",
@@ -51,6 +54,52 @@
         "failed",
         "discarded",
         "promoted"
+      ]
+    },
+    "eval_split": {
+      "type": "string",
+      "enum": [
+        "search_val",
+        "audit_val",
+        "locked_val"
+      ]
+    },
+    "run_purpose": {
+      "type": "string",
+      "enum": [
+        "search",
+        "confirm",
+        "audit",
+        "replay",
+        "baseline",
+        "noise_probe"
+      ]
+    },
+    "validation_state": {
+      "type": "string",
+      "enum": [
+        "not_required",
+        "pending",
+        "passed",
+        "failed"
+      ]
+    },
+    "validation_review_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "replay_source_experiment_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "idea_signature": {
+      "type": [
+        "string",
+        "null"
       ]
     },
     "disposition": {

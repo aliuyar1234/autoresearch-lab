@@ -34,6 +34,33 @@
     "campaign_id": {
       "type": "string"
     },
+    "eval_split": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "search_val",
+        "audit_val",
+        "locked_val",
+        null
+      ]
+    },
+    "run_purpose": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "search",
+        "confirm",
+        "audit",
+        "replay",
+        "baseline",
+        "noise_probe",
+        null
+      ]
+    },
     "lane": {
       "type": "string",
       "enum": [
@@ -136,6 +163,12 @@
         "null"
       ]
     },
+    "validation_review_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "summary_target_path": {
       "type": [
         "string",
@@ -143,6 +176,34 @@
       ]
     },
     "env_capture": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "runtime_defaults": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "runtime_overlay": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "runtime_effective": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "autotune": {
       "type": [
         "object",
         "null"

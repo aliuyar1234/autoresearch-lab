@@ -7,6 +7,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .backends import (
+    autotune_runtime,
+    available_backend_candidates,
+    backend_blacklist_path,
+    backend_cache_path,
+    detect_device_profile,
+    select_backend,
+    shape_family_for_run,
+)
 from research.dense_gpt.search_space import resolve_dense_config
 
 from .campaigns import build_campaign, list_campaigns, load_campaign, verify_campaign
@@ -18,16 +27,23 @@ from .ledger.queries import (
     get_experiment,
     get_latest_daily_report,
     get_proposal,
+    get_retrieval_event,
+    get_validation_review,
     list_archive_rows,
     list_campaign_experiments,
     list_campaign_proposals,
+    list_daily_reports,
+    list_memory_records,
     list_prior_experiments,
+    list_validation_reviews,
     upsert_campaign,
     upsert_proposal,
 )
+from .memory import backfill_memory, persist_proposal_memory_state
 from .night import run_night_session
-from .paths import build_paths, ensure_managed_roots, missing_repo_markers, stringify_paths
+from .paths import build_paths, ensure_managed_roots, missing_repo_markers, resolve_managed_path, stringify_paths
 from .preflight import run_preflight
+from .proposals import normalize_proposal_payload
 from .reports import generate_report_bundle
 from .replay import load_replay_proposal
 from .runner import execute_experiment
@@ -43,6 +59,7 @@ from .scoring import best_baseline, explain_experiment_score
 from .settings import LabSettings, SettingsError, load_settings
 from .smoke_assets import SmokeAssetError, ensure_smoke_campaign_assets
 from .utils import load_schema, read_json, utc_now_iso, validate_payload
+from .validation import run_noise_probe, run_validation_review
 
 EXIT_SUCCESS = 0
 EXIT_USER_ERROR = 2
@@ -117,7 +134,7 @@ def _cmd_bootstrap(args: argparse.Namespace) -> int:
         raise SettingsError(f"repo root is missing required lab files: {', '.join(missing)}")
 
     created_roots = ensure_managed_roots(paths)
-    db_created = apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    db_created = apply_migrations(paths.db_path, paths.sql_root)
     schema_versions = list_schema_versions(paths.db_path)
 
     env_created = False
@@ -252,7 +269,7 @@ def _cmd_campaign_queue(args: argparse.Namespace) -> int:
         raise SettingsError("campaign queue requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     campaign = _load_campaign(paths, args.campaign)
     connection = connect(paths.db_path)
     try:
@@ -269,8 +286,10 @@ def _cmd_campaign_queue(args: argparse.Namespace) -> int:
         )
         if getattr(args, "apply", False):
             for proposal in queue:
+                proposal = normalize_proposal_payload(proposal)
                 validate_payload(proposal, load_schema(paths.schemas_root / "proposal.schema.json"))
                 upsert_proposal(connection, proposal, updated_at=proposal["created_at"])
+                persist_proposal_memory_state(connection, paths=paths, proposal=proposal)
             connection.commit()
     finally:
         connection.close()
@@ -321,6 +340,10 @@ def _parse_target_command(args: argparse.Namespace) -> list[str]:
         "{campaign_id}",
         "--lane",
         "{lane}",
+        "--eval-split",
+        "{eval_split}",
+        "--run-purpose",
+        "{run_purpose}",
         "--backend",
         "{backend}",
         "--device-profile",
@@ -345,6 +368,60 @@ def _load_campaign(paths, campaign_id: str) -> dict[str, object]:
     payload = read_json(manifest_path)
     validate_payload(payload, load_schema(paths.schemas_root / "campaign.schema.json"))
     return payload
+
+
+def _torch_runtime_versions() -> tuple[str, str | None]:
+    torch_version = "unavailable"
+    cuda_version = None
+    try:
+        import torch
+
+        torch_version = str(getattr(torch, "__version__", "unavailable"))
+        cuda_version = getattr(torch.version, "cuda", None)
+    except Exception:
+        pass
+    return torch_version, cuda_version
+
+
+def _select_backend_for_resolved_config(paths, campaign: dict[str, object], resolved_config: dict[str, object], detected_profile):
+    shape = shape_family_for_run(campaign, resolved_config, detected_profile, purpose="train")
+    torch_version, cuda_version = _torch_runtime_versions()
+    selection = select_backend(
+        cache_path=backend_cache_path(paths),
+        blacklist_path=backend_blacklist_path(paths),
+        candidates=available_backend_candidates(detected_profile),
+        shape=shape,
+        device_profile=detected_profile,
+        cuda_version=cuda_version,
+        torch_version=torch_version,
+        compile_enabled=bool(resolved_config["runtime"].get("compile_enabled", True)),
+    )
+    return selection.backend, selection
+
+
+def _experiment_runtime_details(paths, row: dict[str, object]) -> dict[str, object] | None:
+    artifact_root = row.get("artifact_root")
+    if not artifact_root:
+        return None
+    root = resolve_managed_path(paths, str(artifact_root))
+    manifest_path = root / "manifest.json"
+    config_path = root / "config.json"
+    if not manifest_path.exists():
+        return None
+    manifest = read_json(manifest_path)
+    config_payload = read_json(config_path) if config_path.exists() else None
+    return {
+        "artifact_root": str(root),
+        "manifest_path": str(manifest_path),
+        "config_path": str(config_path) if config_path.exists() else None,
+        "runtime_defaults": manifest.get("runtime_defaults"),
+        "runtime_overlay": manifest.get("runtime_overlay"),
+        "runtime_effective": manifest.get("runtime_effective"),
+        "autotune": manifest.get("autotune"),
+        "runtime_autotune_from_config": (config_payload or {}).get("runtime", {}).get("autotune")
+        if isinstance(config_payload, dict)
+        else None,
+    }
 
 
 def _load_proposal_from_args(args: argparse.Namespace, paths) -> dict[str, object]:
@@ -376,10 +453,11 @@ def _load_proposal_from_args(args: argparse.Namespace, paths) -> dict[str, objec
             raise SettingsError(str(exc)) from exc
         finally:
             connection.close()
+        payload = normalize_proposal_payload(payload)
         validate_payload(payload, load_schema(paths.schemas_root / "proposal.schema.json"))
         return payload
     if getattr(args, "proposal", None):
-        payload = read_json(Path(args.proposal))
+        payload = normalize_proposal_payload(read_json(Path(args.proposal)))
         validate_payload(payload, load_schema(paths.schemas_root / "proposal.schema.json"))
         return payload
     if getattr(args, "proposal_id", None):
@@ -390,7 +468,7 @@ def _load_proposal_from_args(args: argparse.Namespace, paths) -> dict[str, objec
             connection.close()
         if not row:
             raise SettingsError(f"proposal not found: {args.proposal_id}")
-        payload = json.loads(row["proposal_json"])
+        payload = normalize_proposal_payload(json.loads(row["proposal_json"]))
         validate_payload(payload, load_schema(paths.schemas_root / "proposal.schema.json"))
         return payload
     raise SettingsError("run requires --proposal or --proposal-id")
@@ -402,10 +480,63 @@ def _time_budget_for_lane(campaign: dict[str, object], lane: str) -> int:
     return int(budgets[key])
 
 
+def _default_run_purpose(proposal: dict[str, object], *, is_replay: bool) -> str:
+    if is_replay:
+        return "replay"
+    if str(proposal.get("family") or "") == "baseline":
+        return "baseline"
+    return "search"
+
+
+def _cmd_autotune(args: argparse.Namespace) -> int:
+    if not getattr(args, "campaign", None):
+        raise SettingsError("autotune requires --campaign")
+    if not getattr(args, "all_lanes", False) and not getattr(args, "lane", None):
+        raise SettingsError("autotune requires --lane or --all-lanes")
+    settings = _load_settings_from_args(args)
+    paths = build_paths(settings)
+    ensure_managed_roots(paths)
+    campaign = _load_campaign(paths, str(args.campaign))
+    lanes = ["scout", "main", "confirm"] if bool(getattr(args, "all_lanes", False)) else [str(args.lane)]
+    detected_profile = detect_device_profile(getattr(args, "device_profile", None))
+    resolved_config = resolve_dense_config(campaign, {}, device_profile=detected_profile)
+    backend = getattr(args, "backend", None)
+    if backend is None:
+        backend, _ = _select_backend_for_resolved_config(paths, campaign, resolved_config, detected_profile)
+
+    results = [
+        autotune_runtime(
+            paths,
+            campaign=campaign,
+            lane=lane_name,
+            device_profile=detected_profile,
+            backend=str(backend),
+            resolved_config=resolved_config,
+            force=bool(getattr(args, "force", False)),
+        ).to_dict()
+        for lane_name in lanes
+    ]
+    if len(results) == 1:
+        payload = dict(results[0])
+        payload["ok"] = bool(payload.get("winner"))
+        payload["candidates"] = payload.get("candidates", [])
+    else:
+        payload = {
+            "ok": all(bool(item.get("winner")) for item in results),
+            "campaign_id": str(campaign["campaign_id"]),
+            "lanes": lanes,
+            "device_profile": detected_profile.profile_id,
+            "backend": str(backend),
+            "results": results,
+        }
+    _emit(payload, args.json)
+    return EXIT_SUCCESS if payload.get("ok") else EXIT_PREFLIGHT_FAILURE
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
 
     proposal = _load_proposal_from_args(args, paths)
     if proposal.get("kind") == "code_patch" and not code_proposal_ready(proposal):
@@ -413,6 +544,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     campaign = _load_campaign(paths, str(proposal["campaign_id"]))
     seed = int(getattr(args, "seed", None) or campaign["budgets"].get("replication_seeds", [42])[0])
     time_budget_seconds = int(getattr(args, "time_budget_seconds", None) or _time_budget_for_lane(campaign, str(proposal["lane"])))
+    eval_split = str(getattr(args, "eval_split", None) or "search_val")
+    run_purpose = str(getattr(args, "run_purpose", None) or _default_run_purpose(proposal, is_replay=False))
     result = execute_experiment(
         paths=paths,
         proposal=proposal,
@@ -422,6 +555,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         time_budget_seconds=time_budget_seconds,
         device_profile=getattr(args, "device_profile", None),
         backend=getattr(args, "backend", None),
+        eval_split=eval_split,
+        run_purpose=run_purpose,
     )
 
     payload = {
@@ -431,6 +566,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         "proposal_family": proposal["family"],
         "proposal_kind": proposal["kind"],
         "status": result.status,
+        "eval_split": eval_split,
+        "run_purpose": run_purpose,
         "crash_class": result.crash_class,
         "artifact_root": str(result.artifact_root),
         "summary_path": str(result.summary_path),
@@ -446,7 +583,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 def _cmd_replay(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
 
     proposal, replay_source_experiment_id = load_replay_proposal(
         paths,
@@ -456,6 +593,8 @@ def _cmd_replay(args: argparse.Namespace) -> int:
     campaign = _load_campaign(paths, str(proposal["campaign_id"]))
     seed = int(getattr(args, "seed", None) or campaign["budgets"].get("replication_seeds", [42])[0])
     time_budget_seconds = int(getattr(args, "time_budget_seconds", None) or _time_budget_for_lane(campaign, str(proposal["lane"])))
+    eval_split = str(getattr(args, "eval_split", None) or "search_val")
+    run_purpose = str(getattr(args, "run_purpose", None) or _default_run_purpose(proposal, is_replay=True))
 
     result = execute_experiment(
         paths=paths,
@@ -466,7 +605,10 @@ def _cmd_replay(args: argparse.Namespace) -> int:
         time_budget_seconds=time_budget_seconds,
         device_profile=getattr(args, "device_profile", None),
         backend=getattr(args, "backend", None),
+        eval_split=eval_split,
+        run_purpose=run_purpose,
         replay_source_experiment_id=replay_source_experiment_id,
+        score_result=False,
     )
 
     payload = {
@@ -474,6 +616,8 @@ def _cmd_replay(args: argparse.Namespace) -> int:
         "experiment_id": result.experiment_id,
         "proposal_id": result.proposal_id,
         "status": result.status,
+        "eval_split": eval_split,
+        "run_purpose": run_purpose,
         "artifact_root": str(result.artifact_root),
         "summary_path": str(result.summary_path),
         "source_experiment_id": replay_source_experiment_id,
@@ -487,7 +631,7 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 def _cmd_export_code_proposal(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     connection = connect(paths.db_path)
     try:
         row = get_proposal(connection, args.proposal_id)
@@ -518,7 +662,7 @@ def _cmd_export_code_proposal(args: argparse.Namespace) -> int:
 def _cmd_import_code_proposal(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     connection = connect(paths.db_path)
     try:
         row = get_proposal(connection, args.proposal_id)
@@ -534,8 +678,10 @@ def _cmd_import_code_proposal(args: argparse.Namespace) -> int:
             )
         except CodeProposalImportError as exc:
             raise SettingsError(str(exc)) from exc
+        updated_proposal = normalize_proposal_payload(updated_proposal)
         validate_payload(updated_proposal, load_schema(paths.schemas_root / "proposal.schema.json"))
         upsert_proposal(connection, updated_proposal, updated_at=utc_now_iso())
+        persist_proposal_memory_state(connection, paths=paths, proposal=updated_proposal)
         connection.commit()
     finally:
         connection.close()
@@ -548,7 +694,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
         raise SettingsError("report requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     campaign = _load_campaign(paths, args.campaign)
     report_date = str(getattr(args, "date", None) or utc_now_iso()[:10])
     connection = connect(paths.db_path)
@@ -570,12 +716,128 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
+def _cmd_memory_backfill(args: argparse.Namespace) -> int:
+    if not getattr(args, "campaign", None):
+        raise SettingsError("memory backfill requires --campaign")
+    settings = _load_settings_from_args(args)
+    paths = build_paths(settings)
+    apply_migrations(paths.db_path, paths.sql_root)
+    campaign = _load_campaign(paths, str(args.campaign))
+    connection = connect(paths.db_path)
+    try:
+        payload = backfill_memory(
+            connection,
+            paths=paths,
+            campaign=campaign,
+            experiments=list_campaign_experiments(connection, str(args.campaign)),
+            validation_reviews=list_validation_reviews(connection, campaign_id=str(args.campaign)),
+            reports=list_daily_reports(connection, str(args.campaign)),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    _emit(
+        {
+            "ok": True,
+            "campaign_id": str(args.campaign),
+            **payload,
+        },
+        args.json,
+    )
+    return EXIT_SUCCESS
+
+
+def _cmd_memory_inspect(args: argparse.Namespace) -> int:
+    if not getattr(args, "campaign", None):
+        raise SettingsError("memory inspect requires --campaign")
+    settings = _load_settings_from_args(args)
+    paths = build_paths(settings)
+    apply_migrations(paths.db_path, paths.sql_root)
+    campaign = _load_campaign(paths, str(args.campaign))
+    connection = connect(paths.db_path)
+    try:
+        records = list_memory_records(
+            connection,
+            campaign_id=str(args.campaign),
+            comparability_group=str(campaign.get("comparability_group") or ""),
+            limit=int(getattr(args, "limit", 20)),
+        )
+    finally:
+        connection.close()
+    _emit(
+        {
+            "ok": True,
+            "campaign_id": str(args.campaign),
+            "count": len(records),
+            "records": records,
+        },
+        args.json,
+    )
+    return EXIT_SUCCESS
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    settings = _load_settings_from_args(args)
+    paths = build_paths(settings)
+    apply_migrations(paths.db_path, paths.sql_root)
+    source_experiment_id = str(args.experiment)
+    connection = connect(paths.db_path)
+    try:
+        source = get_experiment(connection, source_experiment_id)
+        if not source:
+            raise SettingsError(f"experiment not found: {source_experiment_id}")
+        campaign = _load_campaign(paths, str(source["campaign_id"]))
+    finally:
+        connection.close()
+    time_budget_seconds = int(getattr(args, "time_budget_seconds", None) or _time_budget_for_lane(campaign, str(source["lane"])))
+    review = run_validation_review(
+        paths=paths,
+        campaign=campaign,
+        source_experiment_id=source_experiment_id,
+        mode=str(args.mode),
+        target_command_template=_parse_target_command(args),
+        time_budget_seconds=time_budget_seconds,
+        device_profile=getattr(args, "device_profile", None),
+        backend=getattr(args, "backend", None),
+        dry_run=bool(getattr(args, "dry_run", False)),
+        reuse_comparator_replays=bool(getattr(args, "reuse_comparator_replays", False)),
+        force_replay=bool(getattr(args, "force_replay", False)),
+    )
+    _emit(review.to_dict(), args.json)
+    if str(review.decision) == "failed":
+        return EXIT_RUN_FAILURE
+    return EXIT_SUCCESS
+
+
+def _cmd_noise(args: argparse.Namespace) -> int:
+    if not getattr(args, "campaign", None):
+        raise SettingsError("noise requires --campaign")
+    settings = _load_settings_from_args(args)
+    paths = build_paths(settings)
+    apply_migrations(paths.db_path, paths.sql_root)
+    campaign = _load_campaign(paths, str(args.campaign))
+    time_budget_seconds = int(getattr(args, "time_budget_seconds", None) or _time_budget_for_lane(campaign, str(args.lane)))
+    payload = run_noise_probe(
+        paths=paths,
+        campaign=campaign,
+        lane=str(args.lane),
+        count=int(args.count),
+        seed_start=int(getattr(args, "seed_start", 42)),
+        target_command_template=_parse_target_command(args),
+        time_budget_seconds=time_budget_seconds,
+        device_profile=getattr(args, "device_profile", None),
+        backend=getattr(args, "backend", None),
+    )
+    _emit(payload.to_dict(), args.json)
+    return EXIT_SUCCESS
+
+
 def _cmd_cleanup(args: argparse.Namespace) -> int:
     if bool(getattr(args, "apply", False)) and bool(getattr(args, "dry_run", False)):
         raise SettingsError("cleanup accepts either --apply or --dry-run, not both")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     connection = connect(paths.db_path)
     try:
         payload = run_cleanup(
@@ -607,7 +869,7 @@ def _cmd_night(args: argparse.Namespace) -> int:
         raise SettingsError("night requires positive --hours or --max-runs")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     campaign = _load_campaign(paths, args.campaign)
     payload = run_night_session(
         paths=paths,
@@ -629,7 +891,7 @@ def _cmd_night(args: argparse.Namespace) -> int:
 def _cmd_inspect(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     connection = connect(paths.db_path)
     try:
         if args.experiment:
@@ -643,6 +905,11 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
                 "campaign_id": row["campaign_id"],
                 "lane": row["lane"],
                 "status": row["status"],
+                "eval_split": row.get("eval_split"),
+                "run_purpose": row.get("run_purpose"),
+                "validation_state": row.get("validation_state"),
+                "validation_review_id": row.get("validation_review_id"),
+                "idea_signature": row.get("idea_signature"),
                 "disposition": row["disposition"],
                 "crash_class": row["crash_class"],
                 "proposal_family": row["proposal_family"],
@@ -652,11 +919,29 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
                 "artifact_root": row["artifact_root"],
                 "summary_path": row["summary_path"],
             }
+            proposal_payload = None
+            if row.get("proposal_id"):
+                proposal_row = get_proposal(connection, str(row["proposal_id"]))
+                if proposal_row and proposal_row.get("proposal_json"):
+                    proposal_payload = normalize_proposal_payload(json.loads(proposal_row["proposal_json"]))
+            if proposal_payload is not None:
+                payload["proposal_evidence_summary"] = {
+                    "idea_signature": proposal_payload.get("idea_signature"),
+                    "retrieval_event_id": proposal_payload.get("retrieval_event_id"),
+                    "evidence_count": len(proposal_payload.get("evidence", [])),
+                    "warning_count": sum(1 for item in proposal_payload.get("evidence", []) if item.get("role") == "warning"),
+                    "anchor_experiment_ids": proposal_payload.get("generation_context", {}).get("anchor_experiment_ids", []),
+                }
+            runtime_details = _experiment_runtime_details(paths, row)
+            if runtime_details is not None:
+                payload["runtime_execution"] = runtime_details
+            if row.get("validation_review_id"):
+                payload["validation_review"] = get_validation_review(connection, str(row["validation_review_id"]))
         elif args.proposal:
             row = get_proposal(connection, args.proposal)
             if not row:
                 raise SettingsError(f"proposal not found: {args.proposal}")
-            proposal_payload = json.loads(row["proposal_json"])
+            proposal_payload = normalize_proposal_payload(json.loads(row["proposal_json"]))
             payload = {
                 "kind": "proposal",
                 "proposal_id": row["proposal_id"],
@@ -667,12 +952,19 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
                 "kind_value": row["kind"],
                 "generator": row["generator"],
                 "complexity_cost": row["complexity_cost"],
+                "idea_signature": proposal_payload.get("idea_signature"),
+                "mutation_paths": proposal_payload.get("mutation_paths", []),
+                "retrieval_event_id": proposal_payload.get("retrieval_event_id"),
+                "evidence": proposal_payload.get("evidence", []),
+                "generation_context": proposal_payload.get("generation_context", {}),
                 "config_fingerprint": proposal_payload.get("config_fingerprint"),
                 "code_patch_imported": bool(isinstance(proposal_payload.get("code_patch"), dict) and proposal_payload["code_patch"].get("import_root")),
                 "code_patch_patch_path": proposal_payload.get("code_patch", {}).get("patch_path")
                 if isinstance(proposal_payload.get("code_patch"), dict)
                 else None,
             }
+            if proposal_payload.get("retrieval_event_id"):
+                payload["retrieval_event"] = get_retrieval_event(connection, str(proposal_payload["retrieval_event_id"]))
         elif args.campaign:
             campaign = _load_campaign(paths, args.campaign)
             experiments = list_campaign_experiments(connection, args.campaign)
@@ -712,6 +1004,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
                     "artifact_paths": report_payload.get("appendix", {}).get("artifact_paths", {}),
                     "leaderboard_preview": report_payload.get("leaderboard_preview", []),
                     "champion_cards_preview": report_payload.get("champion_cards_preview", []),
+                    "memory_summary": report_payload.get("memory_summary", {}),
                 }
         else:
             raise SettingsError("inspect requires --experiment, --proposal, or --campaign")
@@ -724,7 +1017,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
 def _cmd_score(args: argparse.Namespace) -> int:
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
-    apply_migrations(paths.db_path, paths.sql_root / "001_ledger.sql")
+    apply_migrations(paths.db_path, paths.sql_root)
     connection = connect(paths.db_path)
     try:
         row = get_experiment(connection, args.experiment)
@@ -745,6 +1038,10 @@ def _cmd_score(args: argparse.Namespace) -> int:
     payload = {
         "experiment_id": row["experiment_id"],
         "status": row["status"],
+        "eval_split": row.get("eval_split"),
+        "run_purpose": row.get("run_purpose"),
+        "validation_state": row.get("validation_state"),
+        "validation_review_id": row.get("validation_review_id"),
         "crash_class": row["crash_class"],
         "primary_metric_name": row["primary_metric_name"],
         "primary_metric_value": row["primary_metric_value"],
@@ -801,6 +1098,10 @@ def _run_tiny_gpu_smoke(paths, campaign_id: str, result) -> dict[str, object]:
         campaign_id,
         "--lane",
         "scout",
+        "--eval-split",
+        "search_val",
+        "--run-purpose",
+        "search",
         "--backend",
         backend,
         "--device-profile",
@@ -905,7 +1206,18 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--seed", type=int)
     run_parser.add_argument("--backend")
     run_parser.add_argument("--device-profile")
+    run_parser.add_argument("--eval-split", choices=["search_val", "audit_val", "locked_val"])
+    run_parser.add_argument("--run-purpose", choices=["search", "confirm", "audit", "replay", "baseline", "noise_probe"])
     run_parser.set_defaults(handler=_cmd_run)
+
+    autotune_parser = subparsers.add_parser("autotune", parents=[common], help="probe and cache runtime-only tuning overlays")
+    autotune_parser.add_argument("--campaign")
+    autotune_parser.add_argument("--lane", choices=["scout", "main", "confirm"])
+    autotune_parser.add_argument("--all-lanes", action="store_true")
+    autotune_parser.add_argument("--backend")
+    autotune_parser.add_argument("--device-profile")
+    autotune_parser.add_argument("--force", action="store_true")
+    autotune_parser.set_defaults(handler=_cmd_autotune)
 
     inspect_parser = subparsers.add_parser("inspect", parents=[common], help="inspect campaigns, proposals, or experiments")
     inspect_parser.add_argument("--experiment")
@@ -922,11 +1234,50 @@ def build_parser() -> argparse.ArgumentParser:
     replay_parser.add_argument("--seed", type=int)
     replay_parser.add_argument("--backend")
     replay_parser.add_argument("--device-profile")
+    replay_parser.add_argument("--eval-split", choices=["search_val", "audit_val", "locked_val"])
+    replay_parser.add_argument("--run-purpose", choices=["search", "confirm", "audit", "replay", "baseline", "noise_probe"])
     replay_parser.set_defaults(handler=_cmd_replay)
 
     score_parser = subparsers.add_parser("score", parents=[common], help="explain or recompute scoring decisions")
     score_parser.add_argument("--experiment", required=True)
     score_parser.set_defaults(handler=_cmd_score)
+
+    validate_parser = subparsers.add_parser("validate", parents=[common], help="run validation replays for a candidate experiment")
+    validate_parser.add_argument("--experiment", required=True)
+    validate_parser.add_argument("--mode", required=True, choices=["confirm", "audit", "locked"])
+    validate_parser.add_argument("--dry-run", action="store_true")
+    validate_parser.add_argument("--reuse-comparator-replays", action=argparse.BooleanOptionalAction, default=True)
+    validate_parser.add_argument("--force-replay", action="store_true")
+    validate_parser.add_argument("--target-command")
+    validate_parser.add_argument("--target-command-json")
+    validate_parser.add_argument("--time-budget-seconds", type=int)
+    validate_parser.add_argument("--backend")
+    validate_parser.add_argument("--device-profile")
+    validate_parser.set_defaults(handler=_cmd_validate)
+
+    noise_parser = subparsers.add_parser("noise", parents=[common], help="run comparable baseline noise probes")
+    noise_parser.add_argument("--campaign", required=True)
+    noise_parser.add_argument("--lane", required=True, choices=["scout", "main", "confirm"])
+    noise_parser.add_argument("--count", type=int, default=5)
+    noise_parser.add_argument("--seed-start", type=int, default=42)
+    noise_parser.add_argument("--target-command")
+    noise_parser.add_argument("--target-command-json")
+    noise_parser.add_argument("--time-budget-seconds", type=int)
+    noise_parser.add_argument("--backend")
+    noise_parser.add_argument("--device-profile")
+    noise_parser.set_defaults(handler=_cmd_noise)
+
+    memory_parser = subparsers.add_parser("memory", parents=[common], help="memory ingestion and inspection commands")
+    memory_subparsers = memory_parser.add_subparsers(dest="memory_command", required=True)
+
+    memory_backfill = memory_subparsers.add_parser("backfill", parents=[nested_common], help="backfill memory records from historical ledger state")
+    memory_backfill.add_argument("--campaign", required=True)
+    memory_backfill.set_defaults(handler=_cmd_memory_backfill)
+
+    memory_inspect = memory_subparsers.add_parser("inspect", parents=[nested_common], help="inspect stored memory records")
+    memory_inspect.add_argument("--campaign", required=True)
+    memory_inspect.add_argument("--limit", type=int, default=20)
+    memory_inspect.set_defaults(handler=_cmd_memory_inspect)
 
     export_parser = subparsers.add_parser("export-code-proposal", parents=[common], help="export a code-lane task pack")
     export_parser.add_argument("--proposal-id", required=True)

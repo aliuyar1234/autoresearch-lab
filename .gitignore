@@ -17,6 +17,13 @@ queue/
 CLAUDE.md
 !AGENTS.md
 
+# Local-only docs and personal guides
+WORLDCLASS_SOFTWARE_CHECKLIST.md
+LOCAL_ONLY_*.md
+PRIVATE_*.md
+PERSONAL_*.md
+*.local.md
+
 # Experimental code/artifacts
 dev/
 artifacts/
