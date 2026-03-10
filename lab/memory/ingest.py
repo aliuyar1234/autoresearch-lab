@@ -154,6 +154,7 @@ def _memory_payloads_for_experiment(*, campaign: dict[str, Any], experiment: dic
     proposal_payload = normalize_proposal_payload(_proposal_payload(experiment))
     config_overrides = proposal_payload.get("config_overrides", {})
     mutation_paths = proposal_payload.get("mutation_paths", [])
+    code_patch_lineage = _code_patch_lineage(proposal_payload)
     payloads: list[dict[str, Any]] = []
     if str(experiment.get("status")) == "completed":
         disposition = str(experiment.get("disposition") or "completed")
@@ -194,6 +195,7 @@ def _memory_payloads_for_experiment(*, campaign: dict[str, Any], experiment: dic
                     "config_overrides": config_overrides,
                     "mutation_paths": mutation_paths,
                     "idea_signature": experiment.get("idea_signature") or proposal_payload.get("idea_signature"),
+                    "code_patch": code_patch_lineage,
                 },
                 "created_at": experiment.get("started_at") or experiment.get("created_at"),
                 "updated_at": experiment.get("ended_at") or experiment.get("updated_at"),
@@ -231,6 +233,7 @@ def _memory_payloads_for_experiment(*, campaign: dict[str, Any], experiment: dic
                         "config_overrides": config_overrides,
                         "mutation_paths": mutation_paths,
                         "idea_signature": experiment.get("idea_signature") or proposal_payload.get("idea_signature"),
+                        "code_patch": code_patch_lineage,
                     },
                     "created_at": experiment.get("started_at") or experiment.get("created_at"),
                     "updated_at": experiment.get("ended_at") or experiment.get("updated_at"),
@@ -269,6 +272,7 @@ def _memory_payloads_for_experiment(*, campaign: dict[str, Any], experiment: dic
                     "config_overrides": config_overrides,
                     "mutation_paths": mutation_paths,
                     "idea_signature": experiment.get("idea_signature") or proposal_payload.get("idea_signature"),
+                    "code_patch": code_patch_lineage,
                 },
                 "created_at": experiment.get("started_at") or experiment.get("created_at"),
                 "updated_at": experiment.get("ended_at") or experiment.get("updated_at"),
@@ -334,6 +338,7 @@ def _completed_experiment_summary(experiment: dict[str, Any]) -> str:
 def _experiment_tags(experiment: dict[str, Any], proposal_payload: dict[str, Any]) -> list[str]:
     tags = {
         str(experiment.get("proposal_family") or proposal_payload.get("family") or "manual"),
+        str(experiment.get("proposal_kind") or proposal_payload.get("kind") or "structured"),
         str(experiment.get("lane") or "unknown"),
         str(experiment.get("eval_split") or "search_val"),
         str(experiment.get("run_purpose") or "search"),
@@ -343,3 +348,22 @@ def _experiment_tags(experiment: dict[str, Any], proposal_payload: dict[str, Any
     if experiment.get("idea_signature") or proposal_payload.get("idea_signature"):
         tags.add(str(experiment.get("idea_signature") or proposal_payload.get("idea_signature")))
     return sorted(tag for tag in tags if tag)
+
+
+def _code_patch_lineage(proposal_payload: dict[str, Any]) -> dict[str, Any] | None:
+    code_patch = proposal_payload.get("code_patch")
+    if not isinstance(code_patch, dict):
+        return None
+    return {
+        "target_files": list(code_patch.get("target_files", [])),
+        "imported_files": list(code_patch.get("imported_files", [])),
+        "deleted_files": list(code_patch.get("deleted_files", [])),
+        "return_kind": code_patch.get("return_kind"),
+        "diff_stats": dict(code_patch.get("diff_stats", {})) if isinstance(code_patch.get("diff_stats"), dict) else {},
+        "evidence_memory_ids": list(code_patch.get("evidence_memory_ids", [])),
+        "validation_targets": (
+            dict(code_patch.get("validation_targets", {}))
+            if isinstance(code_patch.get("validation_targets"), dict)
+            else {}
+        ),
+    }

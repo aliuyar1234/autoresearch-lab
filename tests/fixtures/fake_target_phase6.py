@@ -27,6 +27,12 @@ def main() -> int:
     parser.add_argument("--run-purpose", default="search")
     parser.add_argument("--backend", default="test_backend")
     parser.add_argument("--device-profile", default="test_profile")
+    parser.add_argument("--config-path")
+    parser.add_argument("--repo-root")
+    parser.add_argument("--artifacts-root")
+    parser.add_argument("--cache-root")
+    parser.add_argument("--seed")
+    parser.add_argument("--time-budget-seconds")
     args = parser.parse_args()
 
     proposal = _load_proposal()

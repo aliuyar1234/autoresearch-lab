@@ -25,6 +25,7 @@ from .doctor import run_doctor
 from .ledger.db import apply_migrations, connect, list_schema_versions
 from .ledger.queries import (
     get_experiment,
+    get_memory_records_by_ids,
     get_latest_daily_report,
     get_proposal,
     get_retrieval_event,
@@ -642,6 +643,11 @@ def _cmd_export_code_proposal(args: argparse.Namespace) -> int:
         experiments = list_campaign_experiments(connection, proposal["campaign_id"])
         best_comparator = _best_comparator(campaign, experiments)
         parent_experiments = [item for item in experiments if item["experiment_id"] in proposal.get("parent_ids", [])]
+        evidence_ids = [str(item.get("memory_id")) for item in proposal.get("evidence", []) if str(item.get("memory_id") or "")]
+        evidence_records = get_memory_records_by_ids(connection, evidence_ids)
+        retrieval_event = None
+        if proposal.get("retrieval_event_id"):
+            retrieval_event = get_retrieval_event(connection, str(proposal["retrieval_event_id"]))
     finally:
         connection.close()
 
@@ -652,6 +658,8 @@ def _cmd_export_code_proposal(args: argparse.Namespace) -> int:
             proposal=proposal,
             best_comparator=best_comparator,
             parent_experiments=parent_experiments,
+            evidence_records=evidence_records,
+            retrieval_event=retrieval_event,
         )
     except CodeProposalExportError as exc:
         raise SettingsError(str(exc)) from exc
@@ -959,7 +967,16 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
                 "generation_context": proposal_payload.get("generation_context", {}),
                 "config_fingerprint": proposal_payload.get("config_fingerprint"),
                 "code_patch_imported": bool(isinstance(proposal_payload.get("code_patch"), dict) and proposal_payload["code_patch"].get("import_root")),
+                "code_patch_import_root": proposal_payload.get("code_patch", {}).get("import_root")
+                if isinstance(proposal_payload.get("code_patch"), dict)
+                else None,
                 "code_patch_patch_path": proposal_payload.get("code_patch", {}).get("patch_path")
+                if isinstance(proposal_payload.get("code_patch"), dict)
+                else None,
+                "code_patch_diff_stats": proposal_payload.get("code_patch", {}).get("diff_stats")
+                if isinstance(proposal_payload.get("code_patch"), dict)
+                else None,
+                "code_patch_evidence_memory_ids": proposal_payload.get("code_patch", {}).get("evidence_memory_ids")
                 if isinstance(proposal_payload.get("code_patch"), dict)
                 else None,
             }

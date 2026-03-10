@@ -12,6 +12,7 @@ CONTENT_TYPES = {
     ".md": "text/markdown",
     ".txt": "text/plain",
     ".diff": "text/x-diff",
+    ".patch": "text/x-diff",
 }
 
 

@@ -413,6 +413,24 @@ def list_memory_records(
     return [_decode_memory_row(dict(row)) for row in rows]
 
 
+def get_memory_records_by_ids(connection, memory_ids: list[str]) -> list[dict[str, Any]]:
+    ids = [str(item) for item in memory_ids if str(item)]
+    if not ids:
+        return []
+    placeholders = ", ".join("?" for _ in ids)
+    rows = connection.execute(
+        f"""
+        SELECT * FROM memory_records
+        WHERE memory_id IN ({placeholders})
+        ORDER BY updated_at DESC, memory_id ASC
+        """,
+        ids,
+    ).fetchall()
+    decoded_rows = [_decode_memory_row(dict(row)) for row in rows]
+    by_id = {row["memory_id"]: row for row in decoded_rows}
+    return [by_id[memory_id] for memory_id in ids if memory_id in by_id]
+
+
 def list_proposal_evidence_links(connection, proposal_id: str) -> list[dict[str, Any]]:
     rows = connection.execute(
         """

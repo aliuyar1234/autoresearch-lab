@@ -7,7 +7,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .proposals import normalize_proposal_payload
 from .paths import LabPaths
+from .semantics import is_validated_promotion
 from .utils import is_within, read_json, utc_now_iso, write_json
 
 
@@ -26,7 +28,11 @@ def export_code_proposal_pack(
     proposal: dict[str, Any],
     best_comparator: dict[str, Any] | None,
     parent_experiments: list[dict[str, Any]],
+    evidence_records: list[dict[str, Any]] | None = None,
+    retrieval_event: dict[str, Any] | None = None,
+    validation_targets: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    proposal = normalize_proposal_payload(proposal)
     if proposal.get("kind") != "code_patch":
         raise CodeProposalExportError("export-code-proposal currently requires a proposal with kind=code_patch")
     code_patch = proposal.get("code_patch")
@@ -44,17 +50,59 @@ def export_code_proposal_pack(
     context_root.mkdir(parents=True, exist_ok=True)
     files_root.mkdir(parents=True, exist_ok=True)
 
+    evidence_payload = _build_evidence_payload(
+        proposal=proposal,
+        parent_experiments=parent_experiments,
+        evidence_records=evidence_records or [],
+        retrieval_event=retrieval_event,
+    )
+    validation_payload = validation_targets or _build_validation_targets(
+        campaign=campaign,
+        proposal=proposal,
+        best_comparator=best_comparator,
+        parent_experiments=parent_experiments,
+    )
+
     write_json(pack_root / "proposal.json", proposal)
-    (pack_root / "README.md").write_text(_render_readme(campaign, proposal, best_comparator), encoding="utf-8")
+    (pack_root / "README.md").write_text(
+        _render_readme(
+            campaign=campaign,
+            proposal=proposal,
+            best_comparator=best_comparator,
+            evidence_payload=evidence_payload,
+            validation_targets=validation_payload,
+        ),
+        encoding="utf-8",
+    )
     (pack_root / "acceptance_criteria.md").write_text(_render_acceptance_criteria(proposal, target_files), encoding="utf-8")
     (pack_root / "target_files.txt").write_text("\n".join(target_files) + "\n", encoding="utf-8")
-    (pack_root / "return_instructions.md").write_text(_render_return_instructions(campaign, proposal), encoding="utf-8")
+    (pack_root / "return_instructions.md").write_text(
+        _render_return_instructions(campaign=campaign, proposal=proposal, validation_targets=validation_payload),
+        encoding="utf-8",
+    )
 
     write_json(context_root / "campaign.json", campaign)
     if best_comparator is not None:
         write_json(context_root / "best_comparator.json", _strip_row(best_comparator))
     write_json(context_root / "parent_runs.json", [_strip_row(item) for item in parent_experiments])
+    write_json(context_root / "evidence.json", evidence_payload)
+    write_json(context_root / "validation_targets.json", validation_payload)
+    (context_root / "proposal_context.md").write_text(
+        _render_proposal_context(
+            campaign=campaign,
+            proposal=proposal,
+            best_comparator=best_comparator,
+            parent_experiments=parent_experiments,
+            evidence_payload=evidence_payload,
+            validation_targets=validation_payload,
+        ),
+        encoding="utf-8",
+    )
     _copy_context_doc(paths.repo_root / "docs" / "product-specs" / "code-lane-pack.md", context_root / "code-lane-pack.md")
+    _copy_context_doc(
+        paths.repo_root / "docs" / "product-specs" / "code-lane-evidence-contract.md",
+        context_root / "code-lane-evidence-contract.md",
+    )
     _copy_context_doc(paths.repo_root / "docs" / "product-specs" / "proposal-format.md", context_root / "proposal-format.md")
     _copy_context_doc(paths.repo_root / "docs" / "product-specs" / "runner-contract.md", context_root / "runner-contract.md")
     copied_targets = _copy_target_files(paths.repo_root, files_root, target_files)
@@ -64,6 +112,9 @@ def export_code_proposal_pack(
         "proposal_id": proposal["proposal_id"],
         "pack_root": str(pack_root),
         "target_files": target_files,
+        "evidence_count": len(evidence_payload.get("citations", [])),
+        "warning_count": int(evidence_payload.get("warning_count") or 0),
+        "validation_targets_path": str(context_root / "validation_targets.json"),
         "copied_context_files": copied_targets,
         "files": sorted(
             str(path.relative_to(pack_root)).replace("\\", "/")
@@ -80,6 +131,7 @@ def import_code_proposal_result(
     patch_path: Path | None = None,
     worktree_path: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    proposal = normalize_proposal_payload(proposal)
     if proposal.get("kind") != "code_patch":
         raise CodeProposalImportError("import-code-proposal currently requires a proposal with kind=code_patch")
     code_patch = proposal.get("code_patch")
@@ -96,11 +148,14 @@ def import_code_proposal_result(
     import_root = paths.proposals_root / proposal["proposal_id"] / "imports" / _safe_stamp(imported_at)
     files_root = import_root / "files"
     import_root.mkdir(parents=True, exist_ok=True)
+    pack_root = paths.proposals_root / proposal["proposal_id"] / "code_pack"
+    context_root = pack_root / "context"
 
     changed_files: list[str]
     deleted_files: list[str]
     return_kind: str
     source_path: Path
+    patch_text: str
     patch_destination = import_root / "returned.patch"
 
     if patch_path is not None:
@@ -131,14 +186,24 @@ def import_code_proposal_result(
             destination = files_root / relative_path
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text((source_path / relative_path).read_text(encoding="utf-8"), encoding="utf-8")
-        patch_destination.write_text(
-            _build_patch_from_worktree(paths.repo_root, source_path, changed_files=changed_files, deleted_files=deleted_files),
-            encoding="utf-8",
+        patch_text = _build_patch_from_worktree(
+            paths.repo_root,
+            source_path,
+            changed_files=changed_files,
+            deleted_files=deleted_files,
         )
+        patch_destination.write_text(patch_text, encoding="utf-8")
         return_kind = "worktree"
 
     if not changed_files and not deleted_files:
         raise CodeProposalImportError("returned code proposal did not contain any allowlisted changes")
+
+    diff_stats = _patch_diff_stats(patch_text, changed_files=changed_files, deleted_files=deleted_files)
+    evidence_path = context_root / "evidence.json"
+    validation_targets_path = context_root / "validation_targets.json"
+    proposal_context_path = context_root / "proposal_context.md"
+    evidence_payload = _read_optional_json(evidence_path)
+    validation_targets_payload = _read_optional_json(validation_targets_path)
 
     return_manifest = {
         "proposal_id": proposal["proposal_id"],
@@ -151,6 +216,21 @@ def import_code_proposal_result(
         "target_files": target_files,
         "changed_files": changed_files,
         "deleted_files": deleted_files,
+        "diff_stats": diff_stats,
+        "pack_root": _existing_path_str(pack_root),
+        "evidence_path": _existing_path_str(evidence_path),
+        "validation_targets_path": _existing_path_str(validation_targets_path),
+        "proposal_context_path": _existing_path_str(proposal_context_path),
+        "retrieval_event_id": proposal.get("retrieval_event_id"),
+        "idea_signature": proposal.get("idea_signature"),
+        "parent_ids": list(proposal.get("parent_ids", [])),
+        "evidence_memory_ids": [str(item.get("memory_id")) for item in proposal.get("evidence", []) if str(item.get("memory_id") or "")],
+        "validation_targets": validation_targets_payload,
+        "generation_context": proposal.get("generation_context", {}),
+        "evidence_summary": {
+            "citation_count": len((evidence_payload or {}).get("citations", [])),
+            "warning_count": int((evidence_payload or {}).get("warning_count") or 0),
+        },
     }
     write_json(import_root / "return_manifest.json", return_manifest)
 
@@ -164,12 +244,24 @@ def import_code_proposal_result(
             "return_kind": return_kind,
             "imported_files": changed_files,
             "deleted_files": deleted_files,
+            "diff_stats": diff_stats,
+            "evidence_path": return_manifest["evidence_path"],
+            "validation_targets_path": return_manifest["validation_targets_path"],
+            "proposal_context_path": return_manifest["proposal_context_path"],
+            "evidence_memory_ids": return_manifest["evidence_memory_ids"],
+            "validation_targets": validation_targets_payload,
         }
     )
     updated["code_patch"] = updated_code_patch
     updated["status"] = "queued"
     updated["generator"] = "imported"
-    updated["notes"] = _append_note(updated.get("notes"), f"Imported {return_kind} return at {imported_at}.")
+    updated["notes"] = _append_note(
+        updated.get("notes"),
+        (
+            f"Imported {return_kind} return at {imported_at}. "
+            f"Touched {diff_stats['files_changed']} files (+{diff_stats['lines_added']}/-{diff_stats['lines_deleted']})."
+        ),
+    )
 
     payload = {
         "ok": True,
@@ -179,6 +271,7 @@ def import_code_proposal_result(
         "patch_path": str(patch_destination),
         "changed_files": changed_files,
         "deleted_files": deleted_files,
+        "diff_stats": diff_stats,
     }
     return updated, payload
 
@@ -236,32 +329,171 @@ def prepare_code_patch_execution(paths: LabPaths, proposal: dict[str, Any], *, e
     }
 
 
-def _render_readme(campaign: dict[str, Any], proposal: dict[str, Any], best_comparator: dict[str, Any] | None) -> str:
+def stage_code_patch_artifacts(run_root: Path, return_manifest: dict[str, Any]) -> list[Path]:
+    code_import_root = run_root / "code_import"
+    code_import_root.mkdir(parents=True, exist_ok=True)
+    staged_paths: list[Path] = []
+
+    manifest_path = code_import_root / "return_manifest.json"
+    write_json(manifest_path, return_manifest)
+    staged_paths.append(manifest_path)
+
+    artifact_map = {
+        "patch_path": code_import_root / "returned.patch",
+        "evidence_path": code_import_root / "evidence.json",
+        "validation_targets_path": code_import_root / "validation_targets.json",
+        "proposal_context_path": code_import_root / "proposal_context.md",
+    }
+    for key, destination in artifact_map.items():
+        source_raw = return_manifest.get(key)
+        if not source_raw:
+            continue
+        source = Path(str(source_raw))
+        if not source.exists() or not source.is_file():
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source.read_bytes())
+        staged_paths.append(destination)
+    return staged_paths
+
+
+def _build_evidence_payload(
+    *,
+    proposal: dict[str, Any],
+    parent_experiments: list[dict[str, Any]],
+    evidence_records: list[dict[str, Any]],
+    retrieval_event: dict[str, Any] | None,
+) -> dict[str, Any]:
+    memory_by_id = {str(item.get("memory_id")): item for item in evidence_records}
+    citations: list[dict[str, Any]] = []
+    warning_count = 0
+    for entry in proposal.get("evidence", []):
+        memory_id = str(entry.get("memory_id") or "")
+        record = memory_by_id.get(memory_id)
+        citation_type = "warning" if str(entry.get("role") or "") == "warning" else "precedent"
+        if citation_type == "warning":
+            warning_count += 1
+        citations.append(
+            {
+                "memory_id": memory_id,
+                "record_type": str(entry.get("record_type") or (record or {}).get("record_type") or ""),
+                "role": str(entry.get("role") or "supporting_precedent"),
+                "citation_type": citation_type,
+                "score": float(entry.get("score") or 0.0),
+                "why_it_matters": str(entry.get("reason") or ""),
+                "source_ref": str(entry.get("source_ref") or (record or {}).get("source_ref") or ""),
+                "title": str((record or {}).get("title") or ""),
+                "summary": str((record or {}).get("summary") or ""),
+                "tags": list((record or {}).get("tags") or []),
+                "payload": (record or {}).get("payload") or {},
+            }
+        )
+    parent_validated_winners = [_parent_run_entry(item) for item in parent_experiments if is_validated_promotion(item)]
+    parent_failures = [
+        _parent_run_entry(item)
+        for item in parent_experiments
+        if str(item.get("status")) != "completed" or str(item.get("validation_state") or "") == "failed"
+    ]
+    return {
+        "proposal_id": proposal["proposal_id"],
+        "campaign_id": proposal["campaign_id"],
+        "retrieval_event_id": proposal.get("retrieval_event_id"),
+        "retrieval_query": {
+            "query_text": retrieval_event.get("query_text"),
+            "query_tags": retrieval_event.get("query_tags", []),
+            "query_payload": retrieval_event.get("query_payload", {}),
+        }
+        if retrieval_event
+        else None,
+        "citation_count": len(citations),
+        "warning_count": warning_count,
+        "citations": citations,
+        "parent_validated_winners": parent_validated_winners,
+        "parent_failures": parent_failures,
+    }
+
+
+def _build_validation_targets(
+    *,
+    campaign: dict[str, Any],
+    proposal: dict[str, Any],
+    best_comparator: dict[str, Any] | None,
+    parent_experiments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    comparator_ids: list[str] = []
+    if best_comparator is not None:
+        comparator_ids.append(str(best_comparator["experiment_id"]))
+    for parent in parent_experiments:
+        experiment_id = str(parent["experiment_id"])
+        if experiment_id not in comparator_ids:
+            comparator_ids.append(experiment_id)
+    lane = str(proposal.get("lane") or "")
+    return {
+        "proposal_id": proposal["proposal_id"],
+        "campaign_id": campaign["campaign_id"],
+        "primary_metric": {
+            "name": campaign["primary_metric"]["name"],
+            "direction": campaign["primary_metric"]["direction"],
+            "tie_threshold": campaign["primary_metric"].get("tie_threshold"),
+        },
+        "expected_direction": proposal.get("expected_direction"),
+        "lane": lane,
+        "confirm_review_required": lane == "confirm",
+        "audit_expected": lane == "confirm",
+        "audit_recommended": lane in {"main", "confirm"} or str(proposal.get("family") or "") in {"manual", "novel"},
+        "comparator_experiment_ids": comparator_ids,
+        "current_best_comparator_id": str(best_comparator["experiment_id"]) if best_comparator is not None else None,
+        "current_best_comparator_metric": float(best_comparator["primary_metric_value"]) if best_comparator is not None else None,
+    }
+
+
+def _render_readme(
+    *,
+    campaign: dict[str, Any],
+    proposal: dict[str, Any],
+    best_comparator: dict[str, Any] | None,
+    evidence_payload: dict[str, Any],
+    validation_targets: dict[str, Any],
+) -> str:
     comparator_line = "No current best comparator is recorded yet."
     if best_comparator is not None:
         comparator_line = (
             f"Current best comparator: {best_comparator['experiment_id']} "
             f"with {best_comparator['primary_metric_name']}={float(best_comparator['primary_metric_value']):.6f}."
         )
+    prior_evidence = "No citations were attached to this proposal."
+    if evidence_payload.get("citations"):
+        highlights = [
+            f"{item['memory_id']} ({item['citation_type']}): {item['why_it_matters'] or item['summary'] or 'context attached'}"
+            for item in evidence_payload["citations"][:3]
+        ]
+        prior_evidence = "\n".join(f"- {item}" for item in highlights)
     return "\n".join(
         [
             f"# Code Proposal Pack: {proposal['proposal_id']}",
             "",
-            f"Campaign: `{proposal['campaign_id']}`",
-            f"Lane: `{proposal['lane']}`",
-            f"Family: `{proposal['family']}`",
-            "",
-            "## Goal",
+            "## What To Build",
             proposal["hypothesis"],
+            "",
+            "## Why Now",
+            proposal["rationale"],
+            "",
+            "## Prior Evidence",
+            prior_evidence,
+            "",
+            "## Allowed Files",
+            *(f"- `{path}`" for path in proposal["code_patch"]["target_files"]),
+            "",
+            "## Success Judgment After Return",
+            f"Primary metric: `{campaign['primary_metric']['name']}` ({campaign['primary_metric']['direction']}).",
+            comparator_line,
+            f"Confirm review required: {'yes' if validation_targets.get('confirm_review_required') else 'no'}.",
+            f"Audit recommended: {'yes' if validation_targets.get('audit_recommended') else 'no'}.",
             "",
             "## Constraints",
             "- Stay within the target file allowlist in `target_files.txt`.",
             "- Keep the proposal aligned with the same runner and scoring pipeline.",
             "- Do not change campaign comparability semantics.",
-            "",
-            "## Scoring",
-            f"Primary metric: `{campaign['primary_metric']['name']}` ({campaign['primary_metric']['direction']}).",
-            comparator_line,
             "",
             "## Return path",
             "Return a patch file, git commit, or worktree path exactly as described in `return_instructions.md`.",
@@ -299,7 +531,13 @@ def _render_acceptance_criteria(proposal: dict[str, Any], target_files: list[str
     return "\n".join(lines)
 
 
-def _render_return_instructions(campaign: dict[str, Any], proposal: dict[str, Any]) -> str:
+def _render_return_instructions(
+    *,
+    campaign: dict[str, Any],
+    proposal: dict[str, Any],
+    validation_targets: dict[str, Any],
+) -> str:
+    comparator_ids = list(validation_targets.get("comparator_experiment_ids") or [])
     return "\n".join(
         [
             "# Return Instructions",
@@ -314,8 +552,107 @@ def _render_return_instructions(campaign: dict[str, Any], proposal: dict[str, An
             f"Campaign: `{campaign['campaign_id']}`",
             f"Lane: `{proposal['lane']}`",
             f"Primary metric: `{campaign['primary_metric']['name']}`",
+            f"Expected direction: `{validation_targets.get('expected_direction') or proposal.get('expected_direction')}`",
+            f"Confirm review required: {'yes' if validation_targets.get('confirm_review_required') else 'no'}",
+            f"Audit expected: {'yes' if validation_targets.get('audit_expected') else 'no'}",
+            f"Audit recommended: {'yes' if validation_targets.get('audit_recommended') else 'no'}",
+            (
+                "Comparator experiment IDs: " + ", ".join(comparator_ids)
+                if comparator_ids
+                else "Comparator experiment IDs: none recorded"
+            ),
         ]
     )
+
+
+def _render_proposal_context(
+    *,
+    campaign: dict[str, Any],
+    proposal: dict[str, Any],
+    best_comparator: dict[str, Any] | None,
+    parent_experiments: list[dict[str, Any]],
+    evidence_payload: dict[str, Any],
+    validation_targets: dict[str, Any],
+) -> str:
+    lines = [
+        "# Proposal Context",
+        "",
+        f"Campaign: `{campaign['campaign_id']}`",
+        f"Proposal: `{proposal['proposal_id']}`",
+        f"Lane / family / kind: `{proposal['lane']}` / `{proposal['family']}` / `{proposal['kind']}`",
+        f"Idea signature: `{proposal.get('idea_signature')}`",
+        "",
+        "## Hypothesis",
+        proposal["hypothesis"],
+        "",
+        "## Rationale",
+        proposal["rationale"],
+        "",
+        "## Generation Context",
+        f"- Family selector reason: {proposal.get('generation_context', {}).get('family_selector_reason') or 'n/a'}",
+        f"- Anchor experiment IDs: {', '.join(proposal.get('generation_context', {}).get('anchor_experiment_ids', [])) or 'none'}",
+        f"- Blocked idea signatures: {', '.join(proposal.get('generation_context', {}).get('blocked_idea_signatures', [])) or 'none'}",
+        f"- Retrieval event ID: {proposal.get('retrieval_event_id') or 'none'}",
+        "",
+        "## Comparator State",
+    ]
+    if best_comparator is None:
+        lines.append("- No comparator experiment is currently recorded.")
+    else:
+        lines.extend(
+            [
+                f"- Best comparator experiment: `{best_comparator['experiment_id']}`",
+                (
+                    f"- Comparator metric: `{best_comparator['primary_metric_name']}`="
+                    f"{float(best_comparator['primary_metric_value']):.6f}"
+                ),
+            ]
+        )
+    lines.extend(["", "## Parent Runs"])
+    if not parent_experiments:
+        lines.append("- No explicit parent runs are attached.")
+    else:
+        for item in parent_experiments:
+            lines.append(
+                "- "
+                + f"`{item['experiment_id']}` {item.get('disposition') or item.get('status') or 'unknown'} "
+                + f"{item.get('primary_metric_name') or campaign['primary_metric']['name']}="
+                + (
+                    "n/a"
+                    if item.get("primary_metric_value") is None
+                    else f"{float(item['primary_metric_value']):.6f}"
+                )
+            )
+    lines.extend(["", "## Evidence"])
+    if not evidence_payload.get("citations"):
+        lines.append("- No memory citations are attached.")
+    else:
+        for item in evidence_payload["citations"]:
+            lines.append(
+                "- "
+                + f"`{item['memory_id']}` [{item['citation_type']}] "
+                + (item["why_it_matters"] or item["summary"] or item["title"] or "context attached")
+            )
+    lines.extend(
+        [
+            "",
+            "## Validation Intent",
+            (
+                f"- Primary metric: `{validation_targets['primary_metric']['name']}` "
+                f"({validation_targets['primary_metric']['direction']})"
+            ),
+            f"- Expected direction: {validation_targets.get('expected_direction') or proposal.get('expected_direction')}",
+            f"- Confirm review required: {'yes' if validation_targets.get('confirm_review_required') else 'no'}",
+            f"- Audit expected: {'yes' if validation_targets.get('audit_expected') else 'no'}",
+            f"- Audit recommended: {'yes' if validation_targets.get('audit_recommended') else 'no'}",
+            (
+                "- Comparator experiment IDs: " + ", ".join(validation_targets.get("comparator_experiment_ids", []))
+                if validation_targets.get("comparator_experiment_ids")
+                else "- Comparator experiment IDs: none recorded"
+            ),
+        ]
+    )
+    return "\n".join(lines)
 
 
 def _copy_context_doc(source: Path, destination: Path) -> None:
@@ -350,6 +687,47 @@ def _strip_row(row: dict[str, Any]) -> dict[str, Any]:
             continue
         payload[key] = str(value)
     return payload
+
+
+def _parent_run_entry(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "experiment_id": str(row.get("experiment_id") or ""),
+        "lane": row.get("lane"),
+        "status": row.get("status"),
+        "disposition": row.get("disposition"),
+        "validation_state": row.get("validation_state"),
+        "primary_metric_name": row.get("primary_metric_name"),
+        "primary_metric_value": row.get("primary_metric_value"),
+    }
+
+
+def _patch_diff_stats(patch_text: str, *, changed_files: list[str], deleted_files: list[str]) -> dict[str, int]:
+    lines_added = 0
+    lines_deleted = 0
+    for line in patch_text.splitlines():
+        if line.startswith(("+++", "---", "@@")):
+            continue
+        if line.startswith("+"):
+            lines_added += 1
+        elif line.startswith("-"):
+            lines_deleted += 1
+    return {
+        "files_changed": len(changed_files),
+        "files_deleted": len(deleted_files),
+        "lines_added": lines_added,
+        "lines_deleted": lines_deleted,
+    }
+
+
+def _read_optional_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists() or not path.is_file():
+        return None
+    payload = read_json(path)
+    return payload if isinstance(payload, dict) else None
+
+
+def _existing_path_str(path: Path) -> str | None:
+    return str(path) if path.exists() else None
 
 
 def _parse_patch_paths(patch_text: str) -> tuple[list[str], list[str]]:
@@ -537,4 +915,5 @@ __all__ = [
     "export_code_proposal_pack",
     "import_code_proposal_result",
     "prepare_code_patch_execution",
+    "stage_code_patch_artifacts",
 ]

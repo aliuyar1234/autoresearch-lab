@@ -1,0 +1,11 @@
+{
+  "figures": [
+    "hero_curve.json",
+    "morning_report_comparison.json",
+    "retrieval_panels.json",
+    "lineage_graph.json",
+    "audit_panel.json",
+    "repeated_dead_end.json"
+  ],
+  "policy": "figure inputs must come from stored ledger or artifact state"
+}

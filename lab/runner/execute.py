@@ -19,7 +19,7 @@ from ..backends import (
     select_backend,
     shape_family_for_run,
 )
-from ..code_proposals import CodeProposalImportError, prepare_code_patch_execution
+from ..code_proposals import CodeProposalImportError, prepare_code_patch_execution, stage_code_patch_artifacts
 from ..ledger.db import apply_migrations, connect
 from ..ledger.queries import (
     list_campaign_experiments,
@@ -421,6 +421,14 @@ def execute_experiment(
         summary["validation_state"] = score.validation_state
 
     write_json(materialized.summary_path, summary)
+    code_import_artifacts: list[dict[str, object]] = []
+    if code_patch_execution is not None:
+        staged_paths = stage_code_patch_artifacts(materialized.run_root, code_patch_execution["return_manifest"])
+        code_import_artifacts = _code_import_artifacts(
+            materialized.run_root,
+            staged_paths,
+            retention_class="full" if summary["status"] == "completed" else "crash_exemplar",
+        )
 
     run_artifacts = [
         build_artifact_record(materialized.run_root, "manifest.json", kind="manifest", retention_class="full"),
@@ -446,6 +454,7 @@ def execute_experiment(
             retention_class="full" if summary["status"] == "completed" else "crash_exemplar",
         ),
     ]
+    run_artifacts.extend(code_import_artifacts)
     run_artifacts.extend(_checkpoint_artifacts(materialized, summary))
     artifact_index = write_artifact_index(materialized.run_root, materialized.experiment_id, run_artifacts)
     schema_failed = False
@@ -473,6 +482,7 @@ def execute_experiment(
             build_artifact_record(materialized.run_root, "stderr.log", kind="stderr", retention_class="crash_exemplar"),
             build_artifact_record(materialized.run_root, "summary.json", kind="summary", retention_class="crash_exemplar"),
         ]
+        run_artifacts.extend(code_import_artifacts)
         run_artifacts.extend(_checkpoint_artifacts(materialized, summary))
         artifact_index = write_artifact_index(materialized.run_root, materialized.experiment_id, run_artifacts)
 
@@ -547,6 +557,21 @@ def _checkpoint_artifacts(materialized, summary: dict[str, Any]) -> list[dict[st
                 materialized.run_root,
                 "checkpoints/pre_eval.meta.json",
                 kind="checkpoint",
+                retention_class=retention_class,
+            )
+        )
+    return artifacts
+
+
+def _code_import_artifacts(run_root: Path, staged_paths: list[Path], *, retention_class: str) -> list[dict[str, object]]:
+    artifacts: list[dict[str, object]] = []
+    for path in staged_paths:
+        relative_path = str(path.relative_to(run_root)).replace("\\", "/")
+        artifacts.append(
+            build_artifact_record(
+                run_root,
+                relative_path,
+                kind="code_import",
                 retention_class=retention_class,
             )
         )

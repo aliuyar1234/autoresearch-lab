@@ -1,0 +1,12 @@
+{
+  "campaign_id": "base_2k",
+  "pairs": 2,
+  "hours": 6.0,
+  "max_runs": 12,
+  "order": "alternate",
+  "allow_confirm": true,
+  "seed_policy": "mixed",
+  "top_per_arm": 2,
+  "snapshot_root": "showcase/the-remembering-scientist/01_seed_snapshot",
+  "validation_eval_split": "locked_val"
+}
