@@ -87,6 +87,8 @@ class NightSessionFakeTests(unittest.TestCase):
             payload = json.loads(night.stdout)
             self.assertTrue(payload["ok"])
             self.assertGreaterEqual(payload["run_count"], 1)
+            self.assertIn("continuation_hint", payload)
+            self.assertIn("base_2k", payload["continuation_hint"])
             self.assertTrue(Path(payload["report"]["artifact_paths"]["report_json"]).exists())
 
             inspect = run_cli("inspect", temp_root, "--campaign", "base_2k", "--json")

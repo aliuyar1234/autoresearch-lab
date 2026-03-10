@@ -44,6 +44,7 @@ def run_night_session(
             "ok": False,
             "campaign_id": campaign["campaign_id"],
             "status": "preflight_failed",
+            "continuation_hint": f"Run `python -m lab.cli preflight --campaign {campaign['campaign_id']}` and fix the reported env/config issues before retrying night.",
             "preflight": preflight.to_dict(),
             "resume": resume_payload,
         }
@@ -97,6 +98,7 @@ def run_night_session(
         interrupted = True
         session_notes.append("Session ended early after an operator interruption.")
 
+    status = "interrupted" if interrupted else ("idle" if not executed else "completed")
     report_payload = _generate_final_report(
         paths,
         campaign=campaign,
@@ -107,7 +109,7 @@ def run_night_session(
     return {
         "ok": bool(report_payload["ok"]),
         "campaign_id": campaign["campaign_id"],
-        "status": "interrupted" if interrupted else "completed",
+        "status": status,
         "run_count": len(executed),
         "queue_refills": queue_refills,
         "executed": executed,
@@ -115,6 +117,12 @@ def run_night_session(
         "report": report_payload,
         "session_started_at": session_started_at,
         "session_ended_at": utc_now_iso(),
+        "continuation_hint": _continuation_hint(
+            campaign_id=str(campaign["campaign_id"]),
+            status=status,
+            resume_payload=resume_payload,
+            run_count=len(executed),
+        ),
     }
 
 
@@ -195,6 +203,20 @@ def _generate_final_report(
         return payload
     finally:
         connection.close()
+
+
+def _continuation_hint(*, campaign_id: str, status: str, resume_payload: dict[str, Any], run_count: int) -> str:
+    if status == "interrupted":
+        return (
+            f"Rerun `python -m lab.cli night --campaign {campaign_id} ...`; the session auto-resumes proposals left in `running` state first."
+        )
+    if status == "idle":
+        if resume_payload.get("status") == "recovered":
+            return f"Rerun `python -m lab.cli night --campaign {campaign_id} ...` to execute the requeued proposals recovered at session start."
+        return f"No queued work remained for {campaign_id}; generate new proposals or rerun night later."
+    if resume_payload.get("status") == "recovered" and run_count > 0:
+        return f"Recovered interrupted work first and finished the session; rerun `night` later to continue exploring {campaign_id}."
+    return f"Night session completed cleanly for {campaign_id}; inspect the report before scheduling more runs."
 
 
 __all__ = ["run_night_session"]

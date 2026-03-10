@@ -214,39 +214,11 @@ def execute_experiment(
     replay_source_experiment_id: str | None = None,
     score_result: bool = True,
 ) -> RunnerResult:
-    proposal = normalize_proposal_payload(proposal)
-    configured_cuda_path = ensure_cuda_path_configured()
-    detected_profile = detect_device_profile(device_profile)
-    resolved_config = resolve_dense_config(campaign, proposal.get("config_overrides", {}), device_profile=detected_profile)
-    scientific_config_fingerprint = str(proposal.get("config_fingerprint") or short_fingerprint(resolved_config))
-    backend_selection = None
-    shape_family = shape_family_for_run(campaign, resolved_config, detected_profile, purpose="train")
-
-    if backend is None:
-        backend, backend_selection, shape_family = _select_backend_for_config(
-            paths=paths,
-            campaign=campaign,
-            resolved_config=resolved_config,
-            detected_profile=detected_profile,
-        )
-    device_profile = detected_profile.profile_id
-    runtime_autotune = resolve_runtime_autotune(
-        paths,
-        campaign=campaign,
-        lane=str(proposal["lane"]),
-        device_profile=detected_profile,
-        backend=str(backend),
-        resolved_config=resolved_config,
-    )
-    resolved_config = apply_runtime_autotune_metadata(resolved_config, runtime_autotune)
-
-    validate_payload(proposal, load_schema(paths.schemas_root / "proposal.schema.json"))
-
-    materialized = materialize_run(
+    execution = _prepare_execution_stage(
         paths=paths,
         proposal=proposal,
         campaign=campaign,
-        run_command=target_command_template,
+        target_command_template=target_command_template,
         seed=seed,
         time_budget_seconds=time_budget_seconds,
         device_profile=device_profile,
@@ -255,18 +227,162 @@ def execute_experiment(
         run_purpose=run_purpose,
         validation_review_id=validation_review_id,
         replay_source_experiment_id=replay_source_experiment_id,
+    )
+    _mark_execution_started(paths, campaign=campaign, proposal=execution["proposal"])
+
+    launch = _launch_execution_stage(
+        paths=paths,
+        execution=execution,
+        target_command_template=target_command_template,
+        seed=seed,
+        time_budget_seconds=time_budget_seconds,
+        eval_split=eval_split,
+        run_purpose=run_purpose,
+        validation_review_id=validation_review_id,
+        replay_source_experiment_id=replay_source_experiment_id,
+    )
+    summary = _resolve_execution_summary(
+        paths=paths,
+        execution=execution,
+        launch=launch,
+        campaign=campaign,
+        score_result=score_result,
+    )
+    staged_code_import_paths = _stage_code_import_paths(
+        execution["materialized"],
+        launch.get("code_patch_execution"),
+    )
+    artifact_index = _build_run_artifact_index(
+        execution["materialized"],
+        summary,
+        staged_code_import_paths=staged_code_import_paths,
+    )
+    validation = _validate_execution_artifacts(
+        paths=paths,
+        execution=execution,
+        campaign=campaign,
+        summary=summary,
+        artifact_index=artifact_index,
+        staged_code_import_paths=staged_code_import_paths,
+        crash_class=launch.get("crash_class"),
+    )
+    _persist_execution_stage(
+        paths=paths,
+        campaign=campaign,
+        proposal=execution["proposal"],
+        materialized=execution["materialized"],
+        summary=validation["summary"],
+        artifact_index=validation["artifact_index"],
+    )
+    return _runner_result_from_summary(
+        materialized=execution["materialized"],
+        proposal=execution["proposal"],
+        summary=validation["summary"],
+        return_code=int(launch["return_code"]),
+        schema_failed=bool(validation["schema_failed"]),
+    )
+
+
+def _prepare_execution_stage(
+    *,
+    paths: LabPaths,
+    proposal: dict[str, Any],
+    campaign: dict[str, Any],
+    target_command_template: list[str],
+    seed: int,
+    time_budget_seconds: int,
+    device_profile: str | None,
+    backend: str | None,
+    eval_split: str,
+    run_purpose: str,
+    validation_review_id: str | None,
+    replay_source_experiment_id: str | None,
+) -> dict[str, Any]:
+    normalized_proposal = normalize_proposal_payload(proposal)
+    validate_payload(normalized_proposal, load_schema(paths.schemas_root / "proposal.schema.json"))
+
+    configured_cuda_path = ensure_cuda_path_configured()
+    detected_profile = detect_device_profile(device_profile)
+    resolved_config = resolve_dense_config(campaign, normalized_proposal.get("config_overrides", {}), device_profile=detected_profile)
+    scientific_config_fingerprint = str(normalized_proposal.get("config_fingerprint") or short_fingerprint(resolved_config))
+    backend_selection = None
+    shape_family = shape_family_for_run(campaign, resolved_config, detected_profile, purpose="train")
+
+    selected_backend = backend
+    if selected_backend is None:
+        selected_backend, backend_selection, shape_family = _select_backend_for_config(
+            paths=paths,
+            campaign=campaign,
+            resolved_config=resolved_config,
+            detected_profile=detected_profile,
+        )
+
+    runtime_autotune = resolve_runtime_autotune(
+        paths,
+        campaign=campaign,
+        lane=str(normalized_proposal["lane"]),
+        device_profile=detected_profile,
+        backend=str(selected_backend),
+        resolved_config=resolved_config,
+    )
+    resolved_config = apply_runtime_autotune_metadata(resolved_config, runtime_autotune)
+
+    materialized = materialize_run(
+        paths=paths,
+        proposal=normalized_proposal,
+        campaign=campaign,
+        run_command=target_command_template,
+        seed=seed,
+        time_budget_seconds=time_budget_seconds,
+        device_profile=detected_profile.profile_id,
+        backend=str(selected_backend),
+        eval_split=eval_split,
+        run_purpose=run_purpose,
+        validation_review_id=validation_review_id,
+        replay_source_experiment_id=replay_source_experiment_id,
         resolved_config=resolved_config,
         config_fingerprint=scientific_config_fingerprint,
     )
+    return {
+        "proposal": normalized_proposal,
+        "configured_cuda_path": configured_cuda_path,
+        "detected_profile": detected_profile,
+        "device_profile": detected_profile.profile_id,
+        "backend": str(selected_backend),
+        "backend_selection": backend_selection,
+        "shape_family": shape_family,
+        "scientific_config_fingerprint": scientific_config_fingerprint,
+        "materialized": materialized,
+    }
 
+
+def _mark_execution_started(paths: LabPaths, *, campaign: dict[str, Any], proposal: dict[str, Any]) -> None:
     apply_migrations(paths.db_path, paths.sql_root)
-    connection = connect(paths.db_path)
     started_at = utc_now_iso()
-    upsert_campaign(connection, campaign, timestamp=started_at)
-    upsert_proposal(connection, proposal, updated_at=started_at)
-    persist_proposal_memory_state(connection, paths=paths, proposal=proposal)
-    set_proposal_status(connection, proposal["proposal_id"], "running", updated_at=started_at)
-    connection.commit()
+    with connect(paths.db_path) as connection:
+        upsert_campaign(connection, campaign, timestamp=started_at)
+        upsert_proposal(connection, proposal, updated_at=started_at)
+        persist_proposal_memory_state(connection, paths=paths, proposal=proposal)
+        set_proposal_status(connection, proposal["proposal_id"], "running", updated_at=started_at)
+        connection.commit()
+
+
+def _launch_execution_stage(
+    *,
+    paths: LabPaths,
+    execution: dict[str, Any],
+    target_command_template: list[str],
+    seed: int,
+    time_budget_seconds: int,
+    eval_split: str,
+    run_purpose: str,
+    validation_review_id: str | None,
+    replay_source_experiment_id: str | None,
+) -> dict[str, Any]:
+    proposal = execution["proposal"]
+    materialized = execution["materialized"]
+    backend = execution["backend"]
+    device_profile = execution["device_profile"]
 
     template_values = {
         "summary_out": str(materialized.summary_path),
@@ -291,10 +407,10 @@ def execute_experiment(
     stderr_text = ""
     return_code = 0
     crash_class: str | None = None
+    execution_root = paths.repo_root
+    code_patch_execution = None
 
     try:
-        execution_root = paths.repo_root
-        code_patch_execution = None
         if proposal.get("kind") == "code_patch":
             code_patch_execution = prepare_code_patch_execution(paths, proposal, experiment_id=materialized.experiment_id)
             if code_patch_execution is not None:
@@ -305,44 +421,18 @@ def execute_experiment(
         materialized.manifest["working_directory"] = str(execution_root)
         write_json(materialized.manifest_path, materialized.manifest)
 
-        env = dict(os.environ)
-        env.update(
-            {
-                "LAB_SUMMARY_OUT": str(materialized.summary_path),
-                "LAB_EXPERIMENT_ID": materialized.experiment_id,
-                "LAB_PROPOSAL_ID": proposal["proposal_id"],
-                "LAB_CAMPAIGN_ID": proposal["campaign_id"],
-                "LAB_LANE": proposal["lane"],
-                "LAB_EVAL_SPLIT": eval_split,
-                "LAB_RUN_PURPOSE": run_purpose,
-                "LAB_BACKEND": backend,
-                "LAB_DEVICE_PROFILE": device_profile,
-                "LAB_REPO_ROOT": str(execution_root),
-                "LAB_EXECUTION_REPO_ROOT": str(execution_root),
-                "LAB_ARTIFACTS_ROOT": str(paths.artifacts_root),
-                "LAB_CACHE_ROOT": str(paths.cache_root),
-                "LAB_CONFIG_PATH": str(materialized.config_path),
-                "LAB_CONFIG_FINGERPRINT": str(materialized.manifest.get("config_fingerprint") or scientific_config_fingerprint),
-                "LAB_CAMPAIGN_MANIFEST_PATH": str(paths.campaigns_root / proposal["campaign_id"] / "campaign.json"),
-                "LAB_ARTIFACT_ROOT": str(materialized.run_root),
-                "LAB_PARENT_COMMIT": materialized.manifest["parent_commit"],
-                "LAB_TIME_BUDGET_SECONDS": str(time_budget_seconds),
-                "LAB_PRE_EVAL_CHECKPOINT_PATH": str(materialized.checkpoint_path),
-                "LAB_PRE_EVAL_META_PATH": str(materialized.checkpoint_meta_path),
-            }
+        env = _build_execution_environment(
+            paths=paths,
+            execution=execution,
+            proposal=proposal,
+            execution_root=execution_root,
+            eval_split=eval_split,
+            run_purpose=run_purpose,
+            validation_review_id=validation_review_id,
+            replay_source_experiment_id=replay_source_experiment_id,
+            time_budget_seconds=time_budget_seconds,
+            code_patch_execution=code_patch_execution,
         )
-        if configured_cuda_path and "CUDA_PATH" not in env:
-            env["CUDA_PATH"] = configured_cuda_path
-        if replay_source_experiment_id is not None:
-            env["LAB_REPLAY_SOURCE_EXPERIMENT_ID"] = replay_source_experiment_id
-        if validation_review_id is not None:
-            env["LAB_VALIDATION_REVIEW_ID"] = validation_review_id
-        if code_patch_execution is not None:
-            env["LAB_CODE_IMPORT_ROOT"] = str(code_patch_execution["import_root"])
-            env["LAB_CODE_CHANGED_FILES"] = json.dumps(code_patch_execution["return_manifest"].get("changed_files", []))
-            env["LAB_CODE_DELETED_FILES"] = json.dumps(code_patch_execution["return_manifest"].get("deleted_files", []))
-            env["LAB_CODE_RETURN_KIND"] = str(code_patch_execution["return_manifest"].get("return_kind") or "unknown")
-
         completed = subprocess.run(
             command,
             cwd=execution_root,
@@ -370,6 +460,82 @@ def execute_experiment(
 
     materialized.stdout_path.write_text(stdout_text, encoding="utf-8")
     materialized.stderr_path.write_text(stderr_text, encoding="utf-8")
+    return {
+        "return_code": return_code,
+        "crash_class": crash_class,
+        "stdout_text": stdout_text,
+        "stderr_text": stderr_text,
+        "execution_root": execution_root,
+        "code_patch_execution": code_patch_execution,
+    }
+
+
+def _build_execution_environment(
+    *,
+    paths: LabPaths,
+    execution: dict[str, Any],
+    proposal: dict[str, Any],
+    execution_root: Path,
+    eval_split: str,
+    run_purpose: str,
+    validation_review_id: str | None,
+    replay_source_experiment_id: str | None,
+    time_budget_seconds: int,
+    code_patch_execution: dict[str, Any] | None,
+) -> dict[str, str]:
+    materialized = execution["materialized"]
+    env = dict(os.environ)
+    env.update(
+        {
+            "LAB_SUMMARY_OUT": str(materialized.summary_path),
+            "LAB_EXPERIMENT_ID": materialized.experiment_id,
+            "LAB_PROPOSAL_ID": proposal["proposal_id"],
+            "LAB_CAMPAIGN_ID": proposal["campaign_id"],
+            "LAB_LANE": proposal["lane"],
+            "LAB_EVAL_SPLIT": eval_split,
+            "LAB_RUN_PURPOSE": run_purpose,
+            "LAB_BACKEND": execution["backend"],
+            "LAB_DEVICE_PROFILE": execution["device_profile"],
+            "LAB_REPO_ROOT": str(execution_root),
+            "LAB_EXECUTION_REPO_ROOT": str(execution_root),
+            "LAB_ARTIFACTS_ROOT": str(paths.artifacts_root),
+            "LAB_CACHE_ROOT": str(paths.cache_root),
+            "LAB_CONFIG_PATH": str(materialized.config_path),
+            "LAB_CONFIG_FINGERPRINT": str(materialized.manifest.get("config_fingerprint") or execution["scientific_config_fingerprint"]),
+            "LAB_CAMPAIGN_MANIFEST_PATH": str(paths.campaigns_root / proposal["campaign_id"] / "campaign.json"),
+            "LAB_ARTIFACT_ROOT": str(materialized.run_root),
+            "LAB_PARENT_COMMIT": materialized.manifest["parent_commit"],
+            "LAB_TIME_BUDGET_SECONDS": str(time_budget_seconds),
+            "LAB_PRE_EVAL_CHECKPOINT_PATH": str(materialized.checkpoint_path),
+            "LAB_PRE_EVAL_META_PATH": str(materialized.checkpoint_meta_path),
+        }
+    )
+    if execution["configured_cuda_path"] and "CUDA_PATH" not in env:
+        env["CUDA_PATH"] = execution["configured_cuda_path"]
+    if replay_source_experiment_id is not None:
+        env["LAB_REPLAY_SOURCE_EXPERIMENT_ID"] = replay_source_experiment_id
+    if validation_review_id is not None:
+        env["LAB_VALIDATION_REVIEW_ID"] = validation_review_id
+    if code_patch_execution is not None:
+        env["LAB_CODE_IMPORT_ROOT"] = str(code_patch_execution["import_root"])
+        env["LAB_CODE_CHANGED_FILES"] = json.dumps(code_patch_execution["return_manifest"].get("changed_files", []))
+        env["LAB_CODE_DELETED_FILES"] = json.dumps(code_patch_execution["return_manifest"].get("deleted_files", []))
+        env["LAB_CODE_RETURN_KIND"] = str(code_patch_execution["return_manifest"].get("return_kind") or "unknown")
+    return env
+
+
+def _resolve_execution_summary(
+    *,
+    paths: LabPaths,
+    execution: dict[str, Any],
+    launch: dict[str, Any],
+    campaign: dict[str, Any],
+    score_result: bool,
+) -> dict[str, Any]:
+    materialized = execution["materialized"]
+    proposal = execution["proposal"]
+    return_code = int(launch["return_code"])
+    crash_class = launch.get("crash_class")
 
     if return_code == 0:
         summary = _load_or_synthesize_summary(
@@ -390,27 +556,28 @@ def execute_experiment(
         )
         summary["status"] = "failed"
         summary["crash_class"] = crash_class or "unknown"
-        if backend_selection is not None and summary["crash_class"] in {"backend_unavailable", "compile_error", "oom_train", "oom_eval"}:
+        if execution["backend_selection"] is not None and summary["crash_class"] in {"backend_unavailable", "compile_error", "oom_train", "oom_eval"}:
             record_backend_failure(
                 paths,
-                backend=backend,
-                shape_family=shape_family.family_id,
+                backend=execution["backend"],
+                shape_family=execution["shape_family"].family_id,
                 reason=str(summary["crash_class"]),
             )
-    summary = _apply_runtime_summary_metadata(summary, materialized.manifest)
 
+    summary = _apply_runtime_summary_metadata(summary, materialized.manifest)
     if materialized.checkpoint_path.exists():
         summary["checkpoint_path"] = str(materialized.checkpoint_path)
     if materialized.checkpoint_meta_path.exists():
         summary.setdefault("warnings", [])
 
     if score_result and _summary_is_scoreable(summary):
-        prior_experiments = list_prior_experiments(
-            connection,
-            str(summary["campaign_id"]),
-            str(summary["lane"]),
-            exclude_experiment_id=materialized.experiment_id,
-        )
+        with connect(paths.db_path) as connection:
+            prior_experiments = list_prior_experiments(
+                connection,
+                str(summary["campaign_id"]),
+                str(summary["lane"]),
+                exclude_experiment_id=materialized.experiment_id,
+            )
         baseline = best_baseline(prior_experiments, direction=str(campaign["primary_metric"]["direction"]))
         score = explain_experiment_score(experiment=summary, campaign=campaign, baseline=baseline)
         summary["disposition"] = score.final_disposition
@@ -421,15 +588,16 @@ def execute_experiment(
         summary["validation_state"] = score.validation_state
 
     write_json(materialized.summary_path, summary)
-    code_import_artifacts: list[dict[str, object]] = []
-    if code_patch_execution is not None:
-        staged_paths = stage_code_patch_artifacts(materialized.run_root, code_patch_execution["return_manifest"])
-        code_import_artifacts = _code_import_artifacts(
-            materialized.run_root,
-            staged_paths,
-            retention_class="full" if summary["status"] == "completed" else "crash_exemplar",
-        )
+    return summary
 
+
+def _stage_code_import_paths(materialized, code_patch_execution: dict[str, Any] | None) -> list[Path]:
+    if code_patch_execution is None:
+        return []
+    return stage_code_patch_artifacts(materialized.run_root, code_patch_execution["return_manifest"])
+
+
+def _build_run_artifact_index(materialized, summary: dict[str, Any], *, staged_code_import_paths: list[Path]) -> dict[str, Any]:
     run_artifacts = [
         build_artifact_record(materialized.run_root, "manifest.json", kind="manifest", retention_class="full"),
         build_artifact_record(materialized.run_root, "proposal.json", kind="proposal", retention_class="full"),
@@ -454,73 +622,101 @@ def execute_experiment(
             retention_class="full" if summary["status"] == "completed" else "crash_exemplar",
         ),
     ]
-    run_artifacts.extend(code_import_artifacts)
+    run_artifacts.extend(
+        _code_import_artifacts(
+            materialized.run_root,
+            staged_code_import_paths,
+            retention_class="full" if summary["status"] == "completed" else "crash_exemplar",
+        )
+    )
     run_artifacts.extend(_checkpoint_artifacts(materialized, summary))
-    artifact_index = write_artifact_index(materialized.run_root, materialized.experiment_id, run_artifacts)
-    schema_failed = False
+    return write_artifact_index(materialized.run_root, materialized.experiment_id, run_artifacts)
 
+
+def _validate_execution_artifacts(
+    *,
+    paths: LabPaths,
+    execution: dict[str, Any],
+    campaign: dict[str, Any],
+    summary: dict[str, Any],
+    artifact_index: dict[str, Any],
+    staged_code_import_paths: list[Path],
+    crash_class: str | None,
+) -> dict[str, Any]:
+    materialized = execution["materialized"]
+    proposal = execution["proposal"]
+    schema_failed = False
     try:
         validate_payload(summary, load_schema(paths.schemas_root / "experiment_record.schema.json"))
         validate_payload(artifact_index, load_schema(paths.schemas_root / "artifact_index.schema.json"))
     except SchemaValidationError as exc:
         schema_failed = True
-        crash_class = crash_class or "unknown"
-        summary = _apply_runtime_summary_metadata(_synthesize_failure_summary(
+        summary = _apply_runtime_summary_metadata(
+            _synthesize_failure_summary(
+                materialized.manifest,
+                proposal,
+                campaign,
+                crash_class=crash_class or "unknown",
+                warning=f"schema validation failed: {exc}",
+            ),
             materialized.manifest,
-            proposal,
-            campaign,
-            crash_class=crash_class,
-            warning=f"schema validation failed: {exc}",
-        ), materialized.manifest)
+        )
         write_json(materialized.summary_path, summary)
-        run_artifacts = [
-            build_artifact_record(materialized.run_root, "manifest.json", kind="manifest", retention_class="full"),
-            build_artifact_record(materialized.run_root, "proposal.json", kind="proposal", retention_class="full"),
-            build_artifact_record(materialized.run_root, "config.json", kind="config", retention_class="full"),
-            build_artifact_record(materialized.run_root, "env.json", kind="env", retention_class="full"),
-            build_artifact_record(materialized.run_root, "stdout.log", kind="stdout", retention_class="crash_exemplar"),
-            build_artifact_record(materialized.run_root, "stderr.log", kind="stderr", retention_class="crash_exemplar"),
-            build_artifact_record(materialized.run_root, "summary.json", kind="summary", retention_class="crash_exemplar"),
-        ]
-        run_artifacts.extend(code_import_artifacts)
-        run_artifacts.extend(_checkpoint_artifacts(materialized, summary))
-        artifact_index = write_artifact_index(materialized.run_root, materialized.experiment_id, run_artifacts)
+        artifact_index = _build_run_artifact_index(
+            materialized,
+            summary,
+            staged_code_import_paths=staged_code_import_paths,
+        )
+    return {
+        "summary": summary,
+        "artifact_index": artifact_index,
+        "schema_failed": schema_failed,
+    }
 
+
+def _persist_execution_stage(
+    *,
+    paths: LabPaths,
+    campaign: dict[str, Any],
+    proposal: dict[str, Any],
+    materialized,
+    summary: dict[str, Any],
+    artifact_index: dict[str, Any],
+) -> None:
     ended_at = summary.get("ended_at") or utc_now_iso()
-    upsert_experiment(
-        connection,
-        summary,
-        artifact_root=materialized.run_root,
-        crash_class=summary.get("crash_class"),
-        disposition=summary.get("disposition"),
-    )
-    experiment_row = next(
-        (
-            row
-            for row in list_campaign_experiments(connection, str(summary["campaign_id"]))
-            if str(row["experiment_id"]) == str(materialized.experiment_id)
-        ),
-        None,
-    )
-    if experiment_row is not None:
-        ingest_experiment_memory(connection, paths=paths, campaign=campaign, experiment=experiment_row)
-    replace_artifacts(connection, artifact_index)
-    campaign_snapshot = build_archive_snapshot(list_campaign_experiments(connection, str(summary["campaign_id"])))
-    replace_campaign_archive_rows(
-        connection,
-        str(summary["campaign_id"]),
-        archive_rows_from_snapshot(str(summary["campaign_id"]), campaign_snapshot, created_at=ended_at),
-    )
-    write_archive_snapshot(paths, str(summary["campaign_id"]), campaign_snapshot)
-    set_proposal_status(
-        connection,
-        proposal["proposal_id"],
-        _proposal_terminal_status(summary),
-        updated_at=ended_at,
-    )
-    connection.commit()
-    connection.close()
+    with connect(paths.db_path) as connection:
+        upsert_experiment(
+            connection,
+            summary,
+            artifact_root=materialized.run_root,
+            crash_class=summary.get("crash_class"),
+            disposition=summary.get("disposition"),
+        )
+        experiments = list_campaign_experiments(connection, str(summary["campaign_id"]))
+        experiment_row = next(
+            (row for row in experiments if str(row["experiment_id"]) == str(materialized.experiment_id)),
+            None,
+        )
+        if experiment_row is not None:
+            ingest_experiment_memory(connection, paths=paths, campaign=campaign, experiment=experiment_row)
+        replace_artifacts(connection, artifact_index)
+        campaign_snapshot = build_archive_snapshot(experiments)
+        replace_campaign_archive_rows(
+            connection,
+            str(summary["campaign_id"]),
+            archive_rows_from_snapshot(str(summary["campaign_id"]), campaign_snapshot, created_at=ended_at),
+        )
+        write_archive_snapshot(paths, str(summary["campaign_id"]), campaign_snapshot)
+        set_proposal_status(
+            connection,
+            proposal["proposal_id"],
+            _proposal_terminal_status(summary),
+            updated_at=ended_at,
+        )
+        connection.commit()
 
+
+def _runner_result_from_summary(*, materialized, proposal: dict[str, Any], summary: dict[str, Any], return_code: int, schema_failed: bool) -> RunnerResult:
     return RunnerResult(
         experiment_id=materialized.experiment_id,
         proposal_id=proposal["proposal_id"],

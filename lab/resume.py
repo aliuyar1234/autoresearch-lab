@@ -94,12 +94,20 @@ def resume_interrupted_state(connection, *, paths, campaign_id: str | None = Non
     payload = {
         "ok": True,
         "campaign_id": campaign_id,
+        "status": _resume_status(
+            inspected_running=len(running),
+            finalized=finalized,
+            requeued=requeued,
+            synthesized_experiments=synthesized_experiments,
+        ),
         "inspected_running_proposals": len(running),
+        "touched_campaigns": sorted(touched_campaigns),
         "finalized_proposals": finalized,
         "requeued_proposals": requeued,
         "recovered_experiments": recovered_experiments,
         "synthesized_experiments": synthesized_experiments,
         "notes": _resume_notes(
+            inspected_running=len(running),
             finalized=finalized,
             requeued=requeued,
             synthesized_experiments=synthesized_experiments,
@@ -285,18 +293,40 @@ def _proposal_payload(row: dict[str, Any]) -> dict[str, Any]:
 
 def _resume_notes(
     *,
+    inspected_running: int,
     finalized: list[dict[str, str]],
     requeued: list[dict[str, str]],
     synthesized_experiments: list[str],
 ) -> list[str]:
     notes: list[str] = []
+    if inspected_running == 0:
+        notes.append("No proposals were still marked running, so resume was a clean no-op.")
+        return notes
     if finalized:
         notes.append(f"Normalized {len(finalized)} running proposal(s) to a terminal status from persisted ledger/artifact state.")
     if synthesized_experiments:
         notes.append(f"Synthesized interrupted failure summaries for {len(synthesized_experiments)} orphaned run(s).")
     if requeued:
         notes.append(f"Requeued {len(requeued)} proposal(s) so the next session can continue without losing progress.")
+    if not notes:
+        notes.append("Resume inspected running proposals and found no additional work to normalize.")
     return notes
+
+
+def _resume_status(
+    *,
+    inspected_running: int,
+    finalized: list[dict[str, str]],
+    requeued: list[dict[str, str]],
+    synthesized_experiments: list[str],
+) -> str:
+    if inspected_running == 0:
+        return "noop"
+    if requeued or synthesized_experiments:
+        return "recovered"
+    if finalized:
+        return "settled"
+    return "noop"
 
 
 __all__ = ["resume_interrupted_state"]

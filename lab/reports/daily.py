@@ -110,131 +110,6 @@ def build_daily_report(
     }
 
 
-def render_daily_report_markdown(report: dict[str, Any]) -> str:
-    header = report["header"]
-    lines = [
-        f"# Morning Report: {report['campaign_id']}",
-        "",
-        f"Report date: {report['report_date']}",
-        f"Window: {header['window_started_at']} -> {header['window_ended_at']}",
-        f"Machine / device profile: {header['device_profile'] or 'unknown'}",
-        "",
-        "## Header",
-        "",
-        f"- Total runs attempted: {header['total_runs_attempted']}",
-        f"- Total successful runs: {header['total_successful_runs']}",
-        f"- Total promoted runs: {header['total_promoted_runs']}",
-        f"- Total failed runs: {header['total_failed_runs']}",
-        "",
-        "## Top Outcomes",
-        "",
-    ]
-    if report["top_outcomes"]["best_new_candidates"]:
-        for item in report["top_outcomes"]["best_new_candidates"]:
-            delta_text = "n/a" if item["delta_vs_previous_champion"] is None else f"{item['delta_vs_previous_champion']:.6f}"
-            lines.append(
-                f"- Best new candidate: {item['experiment_id']} ({item['proposal_family']}) metric={item['primary_metric_value']:.6f} delta={delta_text}"
-            )
-    else:
-        lines.append("- No completed candidates were recorded in this window.")
-    if report["top_outcomes"]["best_confirmed_candidates"]:
-        for item in report["top_outcomes"]["best_confirmed_candidates"]:
-            lines.append(f"- Best confirmed candidate: {item['experiment_id']} metric={item['primary_metric_value']:.6f}")
-    champion = report["top_outcomes"]["champion_update"]
-    lines.append(
-        f"- New champion emerged: {'yes' if champion['new_champion_emerged'] else 'no'}"
-        + (f" ({champion['current_champion_experiment_id']})" if champion["current_champion_experiment_id"] else "")
-    )
-    if champion["delta_vs_previous_champion"] is not None:
-        lines.append(f"- Direct delta vs previous champion: {champion['delta_vs_previous_champion']:.6f}")
-
-    lines.extend(["", "## What Changed", ""])
-    if report["what_changed"]:
-        for family in report["what_changed"]:
-            lines.append(
-                f"- {family['family']}: {family['run_count']} runs, {family['promoted_count']} promoted, {family['failed_count']} failed; knobs={', '.join(family['top_knobs']) or 'baseline'}"
-            )
-            if family["worked"]:
-                lines.append(f"  worked: {family['worked']}")
-            if family["failed"]:
-                lines.append(f"  failed: {family['failed']}")
-    else:
-        lines.append("- No proposal-family changes were recorded in this window.")
-
-    lines.extend(["", "## Failure Summary", ""])
-    if report["failure_summary"]["entries"]:
-        for entry in report["failure_summary"]["entries"]:
-            lines.append(f"- {entry['crash_class']}: {entry['count']} runs; likely cause: {entry['likely_cause']}")
-    else:
-        lines.append("- No failures in this window.")
-
-    lines.extend(["", "## Archive Updates", ""])
-    archive = report["archive_updates"]
-    lines.append(f"- Newly promoted runs: {', '.join(archive['newly_promoted']) or 'none'}")
-    lines.append(f"- Newly archived near-misses: {', '.join(archive['newly_archived']) or 'none'}")
-    lines.append(f"- Superseded champions: {', '.join(archive['superseded_champions']) or 'none'}")
-
-    lines.extend(["", "## Validation", ""])
-    validation = report["validation_summary"]
-    lines.append(f"- Pending validation: {validation['pending_count']}")
-    lines.append(f"- Confirm passes: {validation['confirm_pass_count']}")
-    lines.append(f"- Confirm fails: {validation['confirm_fail_count']}")
-    lines.append(f"- Audit reviews: {validation['audit_review_count']}")
-
-    lines.extend(["", "## Memory", ""])
-    memory_summary = report["memory_summary"]
-    lines.append(f"- Auto-generated proposals: {memory_summary['auto_generated_proposal_count']}")
-    lines.append(f"- Retrieval-backed proposals: {memory_summary['cited_proposal_count']}")
-    lines.append(f"- Negative citations present: {memory_summary['negative_cited_proposal_count']}")
-    lines.append(f"- Retrieval events observed: {memory_summary['retrieval_event_count']}")
-    lines.append(f"- Memory citation coverage: {_ratio_text(report['memory_citation_coverage'])}")
-    lines.append(f"- Negative citation coverage: {_ratio_text(report['negative_citation_coverage'])}")
-    lines.append(f"- Composed proposal rate: {_ratio_text(report['composed_proposal_rate'])}")
-    lines.append(f"- Repeated dead-end rate: {_ratio_text(report['repeated_dead_end_rate'])}")
-    lines.append(f"- Validation pass rate: {_ratio_text(report['validation_pass_rate'])}")
-    for example in memory_summary.get("top_retrieval_examples", [])[:3]:
-        lines.append(
-            f"- Retrieval example: {example['experiment_id']} cites {example['evidence_count']} memories"
-            + (f" ({example['retrieval_event_id']})" if example.get("retrieval_event_id") else "")
-        )
-
-    lines.extend(["", "## Recommendations", ""])
-    for note in report["recommendations"]["notes"]:
-        lines.append(f"- {note}")
-
-    if report.get("session_notes"):
-        lines.extend(["", "## Session Notes", ""])
-        for note in report["session_notes"]:
-            lines.append(f"- {note}")
-
-    lines.extend(["", "## Appendix", ""])
-    lines.append("- Artifact paths:")
-    for name, path in report["appendix"]["artifact_paths"].items():
-        lines.append(f"  - {name}: {path}")
-    lines.append("- Run table:")
-    for row in report["appendix"]["run_table"]:
-        metric_text = "n/a" if row["primary_metric_value"] is None else f"{row['primary_metric_value']:.6f}"
-        runtime_effective = row.get("runtime_effective") or {}
-        runtime_text = "runtime=n/a"
-        if isinstance(runtime_effective, dict) and runtime_effective:
-            runtime_text = (
-                f"runtime=db{runtime_effective.get('device_batch_size')} "
-                f"eval{runtime_effective.get('eval_batch_size')} "
-                f"compile={runtime_effective.get('compile_enabled')}"
-            )
-        headroom = row.get("vram_headroom_gb")
-        headroom_text = "headroom=n/a" if headroom is None else f"headroom={float(headroom):.3f}GB"
-        autotune_hit = row.get("autotune_cache_hit")
-        autotune_text = "autotune=n/a" if autotune_hit is None else f"autotune={'hit' if autotune_hit else 'miss'}"
-        lines.append(
-            f"  - {row['experiment_id']} family={row['proposal_family']} lane={row['lane']} status={row['status']} metric={metric_text} "
-            f"backend={row.get('backend')} {runtime_text} {headroom_text} {autotune_text}"
-        )
-    lines.append("")
-    lines.append(f"Generated at: {report['appendix']['generation_metadata']['generated_at']}")
-    return "\n".join(lines) + "\n"
-
-
 def _build_header(
     campaign: dict[str, Any],
     window_experiments: list[dict[str, Any]],
@@ -631,12 +506,6 @@ def _safe_ratio(numerator: int, denominator: int) -> float | None:
     return round(float(numerator) / float(denominator), 4)
 
 
-def _ratio_text(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{value:.2%}"
-
-
 def _most_common(values: list[Any]) -> Any:
     counter = Counter(item for item in values if item)
     if not counter:
@@ -648,5 +517,4 @@ __all__ = [
     "build_daily_report",
     "filter_experiments_for_window",
     "parse_iso_timestamp",
-    "render_daily_report_markdown",
 ]

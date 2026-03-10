@@ -140,6 +140,83 @@ class CleanupPolicyTests(unittest.TestCase):
             finding_types = [item["type"] for item in doctor_payload["findings"]]
             self.assertIn("missing_artifact", finding_types)
 
+    def test_doctor_is_idempotent_and_classifies_artifact_problems(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            bootstrap = run_cli("bootstrap", temp_root, "--json")
+            self.assertEqual(bootstrap.returncode, 0, bootstrap.stderr)
+
+            proposal_dir = temp_root / "proposals"
+            proposal_dir.mkdir(parents=True, exist_ok=True)
+            proposal_path = _write_proposal(proposal_dir, proposal_id="p_doctor_repeat")
+            result = run_cli(
+                "run",
+                temp_root,
+                "--proposal",
+                str(proposal_path),
+                "--target-command-json",
+                _phase6_target_command(),
+                "--json",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            Path(payload["summary_path"]).unlink()
+
+            first = run_cli("doctor", temp_root, "--campaign", "base_2k", "--json")
+            second = run_cli("doctor", temp_root, "--campaign", "base_2k", "--json")
+            self.assertEqual(first.returncode, 3, first.stdout)
+            self.assertEqual(second.returncode, 3, second.stdout)
+
+            first_payload = json.loads(first.stdout)
+            second_payload = json.loads(second.stdout)
+            self.assertEqual(first_payload["counts"], second_payload["counts"])
+            self.assertEqual(
+                [(item["type"], item["problem_class"]) for item in first_payload["findings"]],
+                [(item["type"], item["problem_class"]) for item in second_payload["findings"]],
+            )
+            self.assertGreater(first_payload["problem_counts"]["artifact"], 0)
+
+    def test_cleanup_dry_run_and_apply_share_selection_logic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            bootstrap = run_cli("bootstrap", temp_root, "--json")
+            self.assertEqual(bootstrap.returncode, 0, bootstrap.stderr)
+
+            proposal_dir = temp_root / "proposals"
+            proposal_dir.mkdir(parents=True, exist_ok=True)
+            proposal_path = _write_proposal(proposal_dir, proposal_id="p_cleanup_apply")
+            result = run_cli(
+                "run",
+                temp_root,
+                "--proposal",
+                str(proposal_path),
+                "--target-command-json",
+                _phase6_target_command(),
+                "--json",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            dry_run = run_cli("cleanup", temp_root, "--dry-run", "--json")
+            self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
+            dry_payload = json.loads(dry_run.stdout)
+            self.assertGreater(dry_payload["candidate_count"], 0)
+            self.assertGreaterEqual(dry_payload["candidate_bytes"], 0)
+            self.assertEqual(dry_payload["status"], "dry_run")
+
+            apply = run_cli("cleanup", temp_root, "--apply", "--json")
+            self.assertEqual(apply.returncode, 0, apply.stderr)
+            apply_payload = json.loads(apply.stdout)
+            self.assertEqual(apply_payload["candidate_count"], dry_payload["candidate_count"])
+            self.assertEqual(apply_payload["candidate_bytes"], dry_payload["candidate_bytes"])
+            self.assertEqual(apply_payload["deleted_count"], dry_payload["candidate_count"])
+            self.assertEqual(apply_payload["status"], "applied")
+
+            after = run_cli("cleanup", temp_root, "--dry-run", "--json")
+            self.assertEqual(after.returncode, 0, after.stderr)
+            after_payload = json.loads(after.stdout)
+            self.assertEqual(after_payload["candidate_count"], 0)
+            self.assertEqual(after_payload["status"], "clean")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,8 +10,10 @@ from lab.campaigns.load import load_campaign
 from lab.ledger.db import apply_migrations, connect
 from lab.ledger.queries import list_campaign_experiments, upsert_campaign, upsert_proposal
 from lab.runner.materialize import materialize_run
-from lab.settings import load_settings
 from lab.paths import build_paths
+from lab.resume import resume_interrupted_state
+from lab.settings import load_settings
+from lab.paths import ensure_managed_roots
 from lab.utils import utc_now_iso
 
 from ._cli_helpers import PHASE6_TARGET, REPO_ROOT, missing_preflight_imports, run_cli, target_json_command
@@ -95,6 +97,36 @@ def _proposal_payload(*, campaign_id: str, proposal_id: str, family: str, lane: 
         "notes": None,
         "guardrails": {"max_peak_vram_gb": 92},
     }
+
+
+class ResumeIdempotenceTests(unittest.TestCase):
+    def test_resume_is_noop_when_nothing_is_running(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            settings = load_settings(
+                repo_root=REPO_ROOT,
+                artifacts_root=temp_root / "artifacts",
+                db_path=temp_root / "lab.sqlite3",
+                worktrees_root=temp_root / ".worktrees",
+                env={},
+            )
+            paths = build_paths(settings)
+            ensure_managed_roots(paths)
+            apply_migrations(paths.db_path, paths.sql_root)
+
+            connection = connect(paths.db_path)
+            try:
+                first = resume_interrupted_state(connection, paths=paths, campaign_id="base_2k")
+                second = resume_interrupted_state(connection, paths=paths, campaign_id="base_2k")
+            finally:
+                connection.close()
+
+            self.assertEqual(first["status"], "noop")
+            self.assertEqual(second["status"], "noop")
+            self.assertEqual(first["inspected_running_proposals"], 0)
+            self.assertEqual(second["inspected_running_proposals"], 0)
+            self.assertTrue(first["notes"])
+            self.assertIn("clean no-op", first["notes"][0])
 
 
 @unittest.skipIf(

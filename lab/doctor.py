@@ -40,7 +40,10 @@ def run_doctor(paths, *, campaign_id: str | None = None) -> dict[str, Any]:
             }
         )
 
+    findings = [_annotate_problem_class(item) for item in findings]
+
     counts = Counter(str(item["severity"]) for item in findings)
+    problem_counts = Counter(str(item["problem_class"]) for item in findings)
     return {
         "ok": counts.get("error", 0) == 0 and integrity == "ok",
         "campaign_id": campaign_id,
@@ -50,6 +53,14 @@ def run_doctor(paths, *, campaign_id: str | None = None) -> dict[str, Any]:
             "error": counts.get("error", 0),
             "warning": counts.get("warning", 0),
             "info": counts.get("info", 0),
+        },
+        "problem_counts": {
+            "artifact": problem_counts.get("artifact", 0),
+            "config": problem_counts.get("config", 0),
+            "env": problem_counts.get("env", 0),
+            "ledger": problem_counts.get("ledger", 0),
+            "run": problem_counts.get("run", 0),
+            "user": problem_counts.get("user", 0),
         },
         "findings": findings,
     }
@@ -202,6 +213,28 @@ def _worktree_findings(worktrees_root: Path) -> list[dict[str, Any]]:
             }
         )
     return findings
+
+
+def _annotate_problem_class(finding: dict[str, Any]) -> dict[str, Any]:
+    problem_class = _problem_class_for_type(str(finding.get("type") or ""))
+    return {
+        **finding,
+        "problem_class": problem_class,
+    }
+
+
+def _problem_class_for_type(finding_type: str) -> str:
+    if finding_type in {"db_integrity", "schema_version_missing"}:
+        return "ledger"
+    if finding_type in {"missing_artifact", "missing_report_artifact", "artifact_outside_managed_root"}:
+        return "artifact"
+    if finding_type in {"proposal_still_running"}:
+        return "run"
+    if finding_type in {"repo_marker_missing"}:
+        return "config"
+    if finding_type in {"managed_root_missing", "broken_worktree_link", "worktree_incomplete"}:
+        return "env"
+    return "user"
 
 
 __all__ = ["RETAINED_RETENTION_CLASSES", "run_doctor"]

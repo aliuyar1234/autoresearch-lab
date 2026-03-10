@@ -170,6 +170,13 @@ class ReportGenerationTests(unittest.TestCase):
             self.assertTrue(report_payload["recommendations"]["notes"])
             self.assertIn("Recommendations", report_md)
 
+    def test_report_starts_with_decision_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = self._run_phase6_fixture(Path(tmpdir))
+            report_md = Path(paths["report_md"]).read_text(encoding="utf-8")
+            self.assertIn("## Decision Summary", report_md)
+            self.assertLess(report_md.index("## Decision Summary"), report_md.index("## Top Outcomes"))
+
 
 if __name__ == "__main__":
     unittest.main()

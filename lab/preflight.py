@@ -25,7 +25,6 @@ from research.dense_gpt.search_space import resolve_dense_config
 REQUIRED_IMPORTS = (
     "torch",
     "numpy",
-    "pandas",
     "pyarrow",
     "requests",
     "rustbpe",

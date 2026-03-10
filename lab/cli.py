@@ -1132,15 +1132,13 @@ def _cmd_cleanup(args: argparse.Namespace) -> int:
             connection.commit()
     finally:
         connection.close()
-    payload = {
-        **payload,
-        "candidate_bytes": sum(int(item.get("size_bytes") or 0) for item in payload.get("candidates", [])),
-    }
+    cleanup_status = str(payload.get("status") or ("applied" if bool(getattr(args, "apply", False)) else "dry_run"))
+    cleanup_message = "cleanup found nothing pruneable" if cleanup_status == "clean" else ("applied cleanup" if bool(getattr(args, "apply", False)) else "planned cleanup")
     _respond(
         args,
         payload,
-        status="applied" if bool(getattr(args, "apply", False)) else "dry_run",
-        message="applied cleanup" if bool(getattr(args, "apply", False)) else "planned cleanup",
+        status=cleanup_status,
+        message=cleanup_message,
     )
     return EXIT_SUCCESS
 
@@ -1186,7 +1184,13 @@ def _cmd_night(args: argparse.Namespace) -> int:
         "promoted_count": report_payload.get("promoted_count", 0) if isinstance(report_payload, dict) else 0,
         "failed_count": report_payload.get("failed_count", 0) if isinstance(report_payload, dict) else 0,
     }
-    _respond(args, payload, message="completed one night session")
+    night_status = str(payload.get("status") or "completed")
+    night_message = {
+        "preflight_failed": "night session stopped at preflight",
+        "interrupted": "night session interrupted; continuation hint included",
+        "idle": "night session found no queued work",
+    }.get(night_status, "completed one night session")
+    _respond(args, payload, status=night_status, message=night_message)
     if payload.get("status") == "interrupted":
         return EXIT_INTERRUPTED
     return EXIT_SUCCESS if payload.get("ok") else EXIT_PREFLIGHT_FAILURE

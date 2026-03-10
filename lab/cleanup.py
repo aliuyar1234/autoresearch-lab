@@ -70,7 +70,9 @@ def run_cleanup(connection, *, paths, apply: bool, campaign_id: str | None = Non
         "campaign_id": campaign_id,
         "apply": apply,
         "dry_run": not apply,
+        "status": _cleanup_status(apply=apply, candidate_count=len(candidates)),
         "candidate_count": len(candidates),
+        "candidate_bytes": sum(int(item.get("size_bytes") or 0) for item in candidates),
         "deleted_count": len(deleted_ids) if apply else 0,
         "missing_candidate_count": missing_candidates if apply else sum(1 for item in candidates if not item["exists"]),
         "reclaimed_bytes": reclaimed_bytes,
@@ -80,6 +82,12 @@ def run_cleanup(connection, *, paths, apply: bool, campaign_id: str | None = Non
         "deleted_paths": deleted_paths,
     }
     return payload
+
+
+def _cleanup_status(*, apply: bool, candidate_count: int) -> str:
+    if candidate_count == 0:
+        return "clean"
+    return "applied" if apply else "dry_run"
 
 
 def _refresh_artifact_index(connection, *, paths, experiment_id: str) -> None:

@@ -241,33 +241,22 @@ def _generate_exploit_candidates(*, campaign: dict[str, Any], lane: str, proposa
     anchor = _best_anchor(campaign, experiments)
     if anchor is None:
         return [], []
-    base_overrides = dict(anchor.get("config_overrides", {}))
-    candidates: list[dict[str, Any]] = []
-    blocked: set[str] = set()
-    counter = next_counter
-    for knob in _campaign_profile(campaign, lane):
-        for value in knob.values:
-            proposal = _mutated_proposal(
-                campaign=campaign,
-                lane=lane,
-                family="exploit",
-                next_counter=counter,
-                base_overrides=base_overrides,
-                knob=knob,
-                value=value,
-                parent_ids=[str(anchor["experiment_id"])],
-                complexity_cost=estimate_complexity_cost(campaign, apply_path_override(base_overrides, knob.path, value)),
-                expected_direction="improve",
-                novelty_reason=None,
-                priority_hint=50,
-                validated_anchor_quality=int(anchor["anchor_quality"]),
-                novelty_score=0.0,
-            )
-            counter += 1
-            if _accept_candidate(proposal, family="exploit", campaign_id=str(campaign["campaign_id"]), experiments=experiments, seen_fingerprints=seen_fingerprints, blocked_signatures=blocked):
-                candidates.append(proposal)
-                break
-    return candidates, sorted(blocked)
+    return _generate_mutation_candidates(
+        campaign=campaign,
+        lane=lane,
+        family="exploit",
+        knobs=_campaign_profile(campaign, lane),
+        experiments=experiments,
+        seen_fingerprints=seen_fingerprints,
+        next_counter=next_counter,
+        base_overrides=dict(anchor.get("config_overrides", {})),
+        parent_ids=[str(anchor["experiment_id"])],
+        expected_direction="improve",
+        priority_hint=50,
+        validated_anchor_quality=int(anchor["anchor_quality"]),
+        novelty_score_for_knob=lambda _knob: 0.0,
+        novelty_reason_for_knob=lambda _knob: None,
+    )
 
 
 def _generate_ablation_candidates(*, campaign: dict[str, Any], lane: str, proposals: list[dict[str, Any]], experiments: list[dict[str, Any]], seen_fingerprints: set[str], next_counter: int) -> tuple[list[dict[str, Any]], list[str]]:
@@ -305,34 +294,27 @@ def _generate_combine_candidates(*, campaign: dict[str, Any], lane: str, proposa
     blocked: set[str] = set()
     counter = next_counter
     strong_anchors = _strong_anchors(campaign, experiments)
-    for index, left in enumerate(strong_anchors):
-        for right in strong_anchors[index + 1 :]:
-            if not left.get("config_overrides") or not right.get("config_overrides"):
-                continue
-            if set(left.get("mutation_paths", [])) & set(right.get("mutation_paths", [])):
-                continue
-            if not disjoint_mergeable(dict(left["config_overrides"]), dict(right["config_overrides"])):
-                continue
-            proposal = _build_proposal(
-                campaign=campaign,
-                lane=lane,
-                family="combine",
-                next_counter=counter,
-                config_overrides=make_combine_override(dict(left["config_overrides"]), dict(right["config_overrides"])),
-                complexity_cost=estimate_complexity_cost(campaign, make_combine_override(dict(left["config_overrides"]), dict(right["config_overrides"]))),
-                hypothesis="Combine two distinct strong parents to test whether their gains compose cleanly.",
-                rationale="Orthogonal improvements should be merged deliberately and cited explicitly.",
-                tags=["combine"],
-                parent_ids=[str(left["experiment_id"]), str(right["experiment_id"])],
-                novelty_reason=None,
-                priority_hint=70,
-                validated_anchor_quality=min(int(left["anchor_quality"]), int(right["anchor_quality"])),
-                novelty_score=0.0,
-                source_experiments=[str(left["experiment_id"]), str(right["experiment_id"])],
-            )
-            counter += 1
-            if _accept_candidate(proposal, family="combine", campaign_id=str(campaign["campaign_id"]), experiments=experiments, seen_fingerprints=seen_fingerprints, blocked_signatures=blocked):
-                candidates.append(proposal)
+    for left, right in _iter_mergeable_anchor_pairs(strong_anchors):
+        proposal = _build_proposal(
+            campaign=campaign,
+            lane=lane,
+            family="combine",
+            next_counter=counter,
+            config_overrides=make_combine_override(dict(left["config_overrides"]), dict(right["config_overrides"])),
+            complexity_cost=estimate_complexity_cost(campaign, make_combine_override(dict(left["config_overrides"]), dict(right["config_overrides"]))),
+            hypothesis="Combine two distinct strong parents to test whether their gains compose cleanly.",
+            rationale="Orthogonal improvements should be merged deliberately and cited explicitly.",
+            tags=["combine"],
+            parent_ids=[str(left["experiment_id"]), str(right["experiment_id"])],
+            novelty_reason=None,
+            priority_hint=70,
+            validated_anchor_quality=min(int(left["anchor_quality"]), int(right["anchor_quality"])),
+            novelty_score=0.0,
+            source_experiments=[str(left["experiment_id"]), str(right["experiment_id"])],
+        )
+        counter += 1
+        if _accept_candidate(proposal, family="combine", campaign_id=str(campaign["campaign_id"]), experiments=experiments, seen_fingerprints=seen_fingerprints, blocked_signatures=blocked):
+            candidates.append(proposal)
     return candidates, sorted(blocked)
 
 
@@ -341,29 +323,74 @@ def _generate_novel_candidates(*, campaign: dict[str, Any], lane: str, proposals
     anchor = _best_anchor(campaign, experiments)
     base_overrides = dict(anchor.get("config_overrides", {})) if anchor else {}
     ranked_knobs = sorted(_campaign_profile(campaign, lane), key=lambda knob: (tag_counts.get(knob.path, 0), tag_counts.get(knob.tag, 0), knob.path))
+    return _generate_mutation_candidates(
+        campaign=campaign,
+        lane=lane,
+        family="novel",
+        knobs=ranked_knobs,
+        experiments=experiments,
+        seen_fingerprints=seen_fingerprints,
+        next_counter=next_counter,
+        base_overrides=base_overrides,
+        parent_ids=[str(anchor["experiment_id"])] if anchor else [],
+        expected_direction="exploratory",
+        priority_hint=60,
+        validated_anchor_quality=int(anchor["anchor_quality"]) if anchor else 0,
+        novelty_score_for_knob=lambda knob: max(0.0, 10.0 - float(tag_counts.get(knob.path, 0)) - float(tag_counts.get(knob.tag, 0))),
+        novelty_reason_for_knob=lambda knob: f"underexplored knob `{knob.path}`",
+        reverse_values=True,
+    )
+
+
+def _generate_mutation_candidates(
+    *,
+    campaign: dict[str, Any],
+    lane: str,
+    family: str,
+    knobs,
+    experiments: list[dict[str, Any]],
+    seen_fingerprints: set[str],
+    next_counter: int,
+    base_overrides: dict[str, Any],
+    parent_ids: list[str],
+    expected_direction: str,
+    priority_hint: int,
+    validated_anchor_quality: int,
+    novelty_score_for_knob,
+    novelty_reason_for_knob,
+    reverse_values: bool = False,
+) -> tuple[list[dict[str, Any]], list[str]]:
     candidates: list[dict[str, Any]] = []
     blocked: set[str] = set()
     counter = next_counter
-    for knob in ranked_knobs:
-        for value in reversed(knob.values):
+    for knob in knobs:
+        values = reversed(knob.values) if reverse_values else knob.values
+        for value in values:
             proposal = _mutated_proposal(
                 campaign=campaign,
                 lane=lane,
-                family="novel",
+                family=family,
                 next_counter=counter,
                 base_overrides=base_overrides,
                 knob=knob,
                 value=value,
-                parent_ids=[str(anchor["experiment_id"])] if anchor else [],
+                parent_ids=parent_ids,
                 complexity_cost=estimate_complexity_cost(campaign, apply_path_override(base_overrides, knob.path, value)),
-                expected_direction="exploratory",
-                novelty_reason=f"underexplored knob `{knob.path}`",
-                priority_hint=60,
-                validated_anchor_quality=int(anchor["anchor_quality"]) if anchor else 0,
-                novelty_score=max(0.0, 10.0 - float(tag_counts.get(knob.path, 0)) - float(tag_counts.get(knob.tag, 0))),
+                expected_direction=expected_direction,
+                novelty_reason=novelty_reason_for_knob(knob),
+                priority_hint=priority_hint,
+                validated_anchor_quality=validated_anchor_quality,
+                novelty_score=float(novelty_score_for_knob(knob)),
             )
             counter += 1
-            if _accept_candidate(proposal, family="novel", campaign_id=str(campaign["campaign_id"]), experiments=experiments, seen_fingerprints=seen_fingerprints, blocked_signatures=blocked):
+            if _accept_candidate(
+                proposal,
+                family=family,
+                campaign_id=str(campaign["campaign_id"]),
+                experiments=experiments,
+                seen_fingerprints=seen_fingerprints,
+                blocked_signatures=blocked,
+            ):
                 candidates.append(proposal)
                 break
     return candidates, sorted(blocked)
@@ -616,15 +643,18 @@ def _have_complex_parent(experiments: list[dict[str, Any]]) -> bool:
 
 def _have_combine_parents(experiments: list[dict[str, Any]]) -> bool:
     eligible = [row for row in (_anchor_from_experiment(item) for item in experiments if is_completed_metric_run(item)) if int(row.get("anchor_quality") or 0) >= 2]
-    for index, left in enumerate(eligible):
-        for right in eligible[index + 1 :]:
+    return any(True for _left, _right in _iter_mergeable_anchor_pairs(eligible))
+
+
+def _iter_mergeable_anchor_pairs(anchors: list[dict[str, Any]]) -> Iterable[tuple[dict[str, Any], dict[str, Any]]]:
+    for index, left in enumerate(anchors):
+        for right in anchors[index + 1 :]:
             if not left.get("config_overrides") or not right.get("config_overrides"):
                 continue
             if set(left.get("mutation_paths", [])) & set(right.get("mutation_paths", [])):
                 continue
             if disjoint_mergeable(dict(left["config_overrides"]), dict(right["config_overrides"])):
-                return True
-    return False
+                yield left, right
 
 
 def _anchor_from_experiment(row: dict[str, Any]) -> dict[str, Any]:
