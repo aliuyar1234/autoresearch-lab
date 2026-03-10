@@ -10,6 +10,21 @@ In one sentence:
 
 **Autoresearch Lab is a single-GPU, CUDA-first, dense-model research lab built on top of the original `autoresearch` concept.**
 
+## Showcase
+
+The first public-facing showcase draft is:
+
+- [SHOWCASE.md](SHOWCASE.md)
+
+It documents the first `The Remembering Scientist` pilot:
+
+- same GPU
+- same campaign
+- same bounded search budget
+- remembering vs amnesiac lab state
+
+The current result is intentionally written with caveats. The pilot is promising, but still honest about confirm noise and what has not been proven yet.
+
 ## What changed from upstream
 
 This repo is no longer just "edit `train.py` and see what happens."

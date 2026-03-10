@@ -1,0 +1,6 @@
+workspaces/
+
+01_seed_snapshot/archive/
+01_seed_snapshot/proposals/
+01_seed_snapshot/reports/
+01_seed_snapshot/lab.sqlite3
