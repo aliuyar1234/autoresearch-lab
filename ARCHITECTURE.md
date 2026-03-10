@@ -216,5 +216,5 @@ They can surface memory citation coverage, repeated-dead-end metrics, validation
 
 1. `CODEX_GUARDRAILS.md`
 2. `docs/runbook.md`
-3. `docs/product-specs/index.md`
+3. `docs/product-specs/acceptance-matrix.md`
 4. `showcase/the-remembering-scientist/README.md`

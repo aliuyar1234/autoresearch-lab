@@ -18,7 +18,7 @@ Build a local, CUDA-first research system that:
 
 ## Hard constraints
 
-These are non-negotiable unless a phase doc explicitly changes them.
+These are non-negotiable unless the code and canonical docs change them deliberately.
 
 1. **Single GPU only**
    - no multi-GPU
@@ -171,14 +171,13 @@ When improving the repo further, prioritize in this order:
 
 ## Required delivery discipline
 
-For every phase:
+For every substantial change:
 
-- read the phase doc first
+- read the owning runtime module and canonical docs first
 - implement the exact deliverables
 - add or update tests
 - run smoke checks
-- update docs if reality changes
-- update `docs/generated/resolved-ambiguities.md` when a contract or interpretation changes
+- update canonical docs if reality changes
 - do not leave half-finished abstractions behind
 
 ## When blocked
@@ -218,5 +217,5 @@ The project is done when:
 1. `ARCHITECTURE.md`
 2. `CODEX_GUARDRAILS.md`
 3. `docs/runbook.md`
-4. `docs/product-specs/index.md`
+4. `docs/product-specs/acceptance-matrix.md`
 5. `showcase/the-remembering-scientist/README.md`

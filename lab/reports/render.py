@@ -101,6 +101,8 @@ def generate_report_bundle(
         "window_ended_at": report_payload["header"]["window_ended_at"],
         "session_notes": report_payload.get("session_notes", []),
         "recommendations": report_payload["recommendations"]["notes"],
+        "current_best_candidate": report_payload.get("decision_summary", {}).get("current_best_candidate"),
+        "top_failures": report_payload.get("decision_summary", {}).get("top_failures", []),
         "latest_champion_experiment_id": leaderboard.get("champion_experiment_id"),
         "memory_summary": report_payload.get("memory_summary", {}),
         "repeated_dead_end_rate": report_payload.get("repeated_dead_end_rate"),
@@ -133,13 +135,13 @@ def render_daily_report_markdown(report: dict[str, Any]) -> str:
         f"Machine / device profile: {header['device_profile'] or 'unknown'}",
     ]
     lines.extend(_render_decision_summary(report))
-    lines.extend(_render_top_outcomes(report))
-    lines.extend(_render_what_changed(report))
     lines.extend(_render_failure_summary(report))
+    lines.extend(_render_recommendations(report))
+    lines.extend(_render_top_outcomes(report))
     lines.extend(_render_archive_updates(report))
     lines.extend(_render_validation_summary(report))
+    lines.extend(_render_what_changed(report))
     lines.extend(_render_memory_summary(report))
-    lines.extend(_render_recommendations(report))
     lines.extend(_render_session_notes(report))
     lines.extend(_render_appendix(report))
     return "\n".join(lines) + "\n"
@@ -147,32 +149,41 @@ def render_daily_report_markdown(report: dict[str, Any]) -> str:
 
 def _render_decision_summary(report: dict[str, Any]) -> list[str]:
     champion = report["top_outcomes"]["champion_update"]
-    best_confirmed = report["top_outcomes"]["best_confirmed_candidates"]
-    best_new = report["top_outcomes"]["best_new_candidates"]
+    summary = report.get("decision_summary", {})
+    candidate = summary.get("current_best_candidate")
+    top_failures = list(summary.get("top_failures", []))
+    next_actions = list(summary.get("next_actions", []))
     validation = report["validation_summary"]
-    recommendation_notes = list(report["recommendations"].get("notes", []))
     lines = [
         "",
         "## Decision Summary",
         "",
         f"- Current champion: {champion['current_champion_experiment_id'] or 'none yet'}",
-        f"- New champion this window: {'yes' if champion['new_champion_emerged'] else 'no'}",
     ]
-    if best_confirmed:
-        top_confirmed = best_confirmed[0]
+    if candidate is not None:
         lines.append(
-            f"- Highest confirmed result: {top_confirmed['experiment_id']} ({top_confirmed['proposal_family']}) metric={top_confirmed['primary_metric_value']:.6f}"
+            f"- Current best candidate: {candidate['experiment_id']} ({candidate['proposal_family']}/{candidate['lane']}) metric={candidate['primary_metric_value']:.6f}"
         )
-    elif best_new:
-        top_candidate = best_new[0]
+        lines.append(f"- Trust label: {candidate['trust_label']}")
+        lines.append(f"- Why trust or distrust it: {candidate['trust_reason']}")
+        if candidate.get("delta_vs_previous_champion") is not None:
+            lines.append(f"- Delta vs previous champion: {candidate['delta_vs_previous_champion']:.6f}")
+        if int(candidate.get("evidence_count") or 0) > 0:
+            retrieval_text = f" via {candidate['retrieval_event_id']}" if candidate.get("retrieval_event_id") else ""
+            lines.append(f"- Memory evidence: {candidate['evidence_count']} cited records{retrieval_text}")
+    else:
+        lines.append("- Current best candidate: none")
+    lines.append(f"- New champion this window: {'yes' if champion['new_champion_emerged'] else 'no'}")
+    lines.append(f"- Pending validation backlog: {validation['pending_count']}")
+    if top_failures:
+        lead_failure = top_failures[0]
         lines.append(
-            f"- Highest unconfirmed result: {top_candidate['experiment_id']} ({top_candidate['proposal_family']}) metric={top_candidate['primary_metric_value']:.6f}"
+            f"- Most important failure: {lead_failure['crash_class']} x{lead_failure['count']} ({lead_failure['likely_cause']})"
         )
     else:
-        lines.append("- Highest result this window: none")
-    lines.append(f"- Pending validation backlog: {validation['pending_count']}")
-    if recommendation_notes:
-        lines.append(f"- Operator focus: {recommendation_notes[0]}")
+        lines.append("- Most important failures: none")
+    if next_actions:
+        lines.append(f"- Next action: {next_actions[0]}")
     return lines
 
 
@@ -183,12 +194,14 @@ def _render_top_outcomes(report: dict[str, Any]) -> list[str]:
         for item in best_new:
             delta_text = "n/a" if item["delta_vs_previous_champion"] is None else f"{item['delta_vs_previous_champion']:.6f}"
             lines.append(
-                f"- Best new candidate: {item['experiment_id']} ({item['proposal_family']}) metric={item['primary_metric_value']:.6f} delta={delta_text}"
+                f"- Best new candidate: {item['experiment_id']} ({item['proposal_family']}) metric={item['primary_metric_value']:.6f} trust={item['trust_label']} delta={delta_text}"
             )
     else:
         lines.append("- No completed candidates were recorded in this window.")
     for item in report["top_outcomes"]["best_confirmed_candidates"]:
-        lines.append(f"- Best confirmed candidate: {item['experiment_id']} metric={item['primary_metric_value']:.6f}")
+        lines.append(
+            f"- Best confirmed candidate: {item['experiment_id']} metric={item['primary_metric_value']:.6f} trust={item['trust_label']}"
+        )
     champion = report["top_outcomes"]["champion_update"]
     lines.append(
         f"- New champion emerged: {'yes' if champion['new_champion_emerged'] else 'no'}"
@@ -275,7 +288,7 @@ def _render_memory_summary(report: dict[str, Any]) -> list[str]:
 
 
 def _render_recommendations(report: dict[str, Any]) -> list[str]:
-    lines = ["", "## Recommendations", ""]
+    lines = ["", "## Next Actions", ""]
     notes = list(report["recommendations"].get("notes", []))
     if not notes:
         lines.append("- No recommendation notes were generated for this window.")
@@ -315,7 +328,7 @@ def _render_appendix(report: dict[str, Any]) -> list[str]:
         autotune_hit = row.get("autotune_cache_hit")
         autotune_text = "autotune=n/a" if autotune_hit is None else f"autotune={'hit' if autotune_hit else 'miss'}"
         lines.append(
-            f"  - {row['experiment_id']} family={row['proposal_family']} lane={row['lane']} status={row['status']} metric={metric_text} "
+            f"  - {row['experiment_id']} family={row['proposal_family']} lane={row['lane']} status={row['status']} trust={row.get('trust_label')} metric={metric_text} "
             f"backend={row.get('backend')} {runtime_text} {headroom_text} {autotune_text}"
         )
     lines.append("")

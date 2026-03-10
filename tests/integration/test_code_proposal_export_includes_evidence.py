@@ -53,13 +53,21 @@ class CodeProposalExportEvidenceTests(unittest.TestCase):
             self.assertTrue((pack_root / "acceptance_criteria.md").exists())
             self.assertTrue((pack_root / "target_files.txt").exists())
             self.assertTrue((pack_root / "return_instructions.md").exists())
+            self.assertTrue((pack_root / "context" / "task_summary.json").exists())
             self.assertTrue((pack_root / "context" / "evidence.json").exists())
             self.assertTrue((pack_root / "context" / "validation_targets.json").exists())
+            self.assertTrue((pack_root / "context" / "local_contracts.md").exists())
             self.assertTrue((pack_root / "context" / "proposal_context.md").exists())
-            self.assertTrue((pack_root / "context" / "code-lane-evidence-contract.md").exists())
 
             self.assertEqual(payload["evidence_count"], 2)
             self.assertEqual(payload["warning_count"], 1)
+
+            task_summary = json.loads((pack_root / "context" / "task_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(task_summary["proposal_id"], proposal["proposal_id"])
+            self.assertEqual(task_summary["target_files"], ["train.py"])
+            self.assertEqual(task_summary["target_seam"], "train.py")
+            self.assertEqual(task_summary["evidence_count"], 2)
+            self.assertEqual(task_summary["warning_count"], 1)
 
             evidence = json.loads((pack_root / "context" / "evidence.json").read_text(encoding="utf-8"))
             self.assertEqual(evidence["retrieval_event_id"], proposal["retrieval_event_id"])
@@ -87,6 +95,12 @@ class CodeProposalExportEvidenceTests(unittest.TestCase):
             self.assertIn("## Allowed Files", readme)
             self.assertIn("## Success Judgment After Return", readme)
             self.assertIn("train.py", readme)
+
+            local_contracts = (pack_root / "context" / "local_contracts.md").read_text(encoding="utf-8")
+            self.assertIn("## Runner Contract", local_contracts)
+            self.assertIn("## Scientific Contract", local_contracts)
+            self.assertIn("## Validation Contract", local_contracts)
+            self.assertIn("## File Boundary", local_contracts)
 
             proposal_context = (pack_root / "context" / "proposal_context.md").read_text(encoding="utf-8")
             self.assertIn("## Evidence", proposal_context)

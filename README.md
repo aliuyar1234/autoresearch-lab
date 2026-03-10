@@ -74,6 +74,8 @@ The public-facing materials live in:
 - [SHOWCASE.md](SHOWCASE.md)
 - [showcase/the-remembering-scientist/README.md](showcase/the-remembering-scientist/README.md)
 
+Historical notes live under `docs/archive/` and `showcase/the-remembering-scientist/archive/`.
+
 The core claim is simple:
 
 `Same GPU. Same campaign. Same budget. The only difference was memory.`
@@ -158,12 +160,13 @@ python -m lab.cli run --proposal-id <proposal_id>
 The exported pack includes:
 
 - proposal json
-- target file list
-- base commit
+- task summary
+- local contracts
 - acceptance criteria
 - evidence citations
 - validation targets
 - concise proposal context
+- exact target files
 - return instructions
 
 Current direct import support accepts:
@@ -221,10 +224,10 @@ That is useful for sanity checks and baseline parity work.
 
 - `AGENTS.md`
 - `ARCHITECTURE.md`
-- `docs/PLANS.md`
 - `docs/runbook.md`
-- `docs/product-specs/lab-cli.md`
-- `docs/product-specs/code-lane-evidence-contract.md`
+- `docs/RELIABILITY.md`
+- `docs/SECURITY.md`
+- `SHOWCASE.md`
 - `docs/product-specs/acceptance-matrix.md`
 - `docs/product-specs/ten-of-ten-signoff.md`
 - `showcase/the-remembering-scientist/README.md`

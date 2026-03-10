@@ -1,42 +1,77 @@
 # The Remembering Scientist
 
-This directory holds the reproducible showcase pipeline for the flagship memory-vs-amnesia case study.
+This directory is the reproducible operator path for the memory-vs-amnesia showcase.
 
-The generated pilot notes in this directory are historical records from the first executed A/B pair. The current repo's evidence and retrieval lineage are stronger than some of those frozen writeups imply.
+It is not a second control plane. The scripts here orchestrate isolated lab workspaces and then summarize their outputs.
 
-The core claim is simple:
+## Terminology
 
-`Same GPU. Same campaign. Same budget. The only difference was memory.`
+- `confirm`: promotion review on `search_val`
+- `audit`: robustness review on `audit_val`
+- `replay`: locked publication check on `locked_val`
 
-## Workflow
+Those meanings should stay stable across scripts, reports, and docs.
 
-1. Freeze a historical seed snapshot:
-   `python showcase/the-remembering-scientist/freeze_memory_snapshot.py --campaign base_2k --source-db <db> --output-root showcase/the-remembering-scientist/01_seed_snapshot`
-2. Run official A/B pairs with isolated roots:
-   `python showcase/the-remembering-scientist/run_ab_test.py --campaign base_2k --pairs 2 --hours 6`
-3. Run confirm, audit, and clean replay passes:
-   `python showcase/the-remembering-scientist/run_validations.py --campaign base_2k`
-4. Render figure-input artifacts and the draft writeup:
-   `python showcase/the-remembering-scientist/render_case_study.py --campaign base_2k`
+## Exact Workflow
 
-## Output shape
+1. Freeze the seed snapshot used by the remembering arm:
 
-- `pair_XX/remembering/` and `pair_XX/amnesiac/` contain isolated showcase arms.
-- `compare.json` and `compare.md` summarize the official A/B pairs.
-- `validations/` contains confirm, audit, and replay outputs.
-- `figures/` contains reproducible figure-input JSON files.
-- `CASE_STUDY_DRAFT.md` is generated from stored artifacts instead of hand-built notes.
+```bash
+python showcase/the-remembering-scientist/freeze_memory_snapshot.py --campaign base_2k --source-db <workspace>/lab.sqlite3 --output-root showcase/the-remembering-scientist/01_seed_snapshot
+```
 
-## Fairness rules
+2. Run one or more official A/B pairs:
 
-- Same repo commit for both arms.
-- Same campaign and runner logic.
-- Same session budget and seed policy.
-- Remembering arm gets a frozen historical snapshot.
-- Amnesiac arm starts from empty historical state with the same schema.
+```bash
+python showcase/the-remembering-scientist/run_ab_test.py --campaign base_2k --output-root showcase/the-remembering-scientist --snapshot-root showcase/the-remembering-scientist/01_seed_snapshot --pairs 1 --hours 4 --max-runs 12 --allow-confirm
+```
 
-## Important boundaries
+3. Run confirm, audit, and locked replay artifacts:
 
-- These scripts are showcase orchestration, not a second lab control plane.
-- Real experiments still run through the normal lab runner and ledger.
-- Figure files are data-first JSON inputs, not screenshot hacks.
+```bash
+python showcase/the-remembering-scientist/run_validations.py --campaign base_2k --output-root showcase/the-remembering-scientist
+```
+
+4. Render figure inputs plus the generated case-study draft:
+
+```bash
+python showcase/the-remembering-scientist/render_case_study.py --campaign base_2k --output-root showcase/the-remembering-scientist
+```
+
+## Output Shape
+
+- `compare.json` and `compare.md`: official A/B pair summaries
+- `candidate_summary.json`: compact candidate summary across pairs
+- `validations/confirm_comparison.json`: confirm review artifacts
+- `validations/audit_comparison.json`: audit review artifacts
+- `validations/clean_replays.json`: locked replay artifacts
+- `validations/validation_summary.json`: consolidated validation, lineage, and citation summary
+- `figures/*.json`: reproducible figure inputs
+- `CASE_STUDY_DRAFT.md`: generated writeup draft
+
+Each pair also keeps isolated workspaces:
+
+- `pair_XX/remembering/`
+- `pair_XX/amnesiac/`
+
+Each arm workspace contains its own `lab.sqlite3` plus report artifacts under `artifacts/reports/`.
+
+## Evidence And Lineage
+
+The current repo's showcase path is evidence-traced:
+
+- candidate proposals carry `retrieval_event_id` and `evidence[]`
+- validation summary artifacts expose `memory_citation_examples`
+- candidate lineage is exported via `candidate_lineage_references`
+- repeated-dead-end metrics are included in both reports and showcase validation summaries
+
+Use these files when checking the public claim:
+
+1. `compare.json`
+2. `validations/validation_summary.json`
+3. the finalist arm reports
+4. the finalist proposals
+
+## What Is Historical
+
+Older pilot notes and templates live under `showcase/the-remembering-scientist/archive/`. Prefer the generated JSON artifacts and current scripts when deciding what the repo actually does now.

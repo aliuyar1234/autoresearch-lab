@@ -9,7 +9,8 @@ from .utils.fs import ensure_directory
 
 REPO_MARKERS = (
     Path("pyproject.toml"),
-    Path("docs") / "design-docs" / "index.md",
+    Path("README.md"),
+    Path("docs") / "runbook.md",
     Path("schemas") / "campaign.schema.json",
     Path("sql") / "001_ledger.sql",
 )

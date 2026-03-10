@@ -62,6 +62,13 @@ def export_code_proposal_pack(
         best_comparator=best_comparator,
         parent_experiments=parent_experiments,
     )
+    task_summary = _build_task_summary(
+        campaign=campaign,
+        proposal=proposal,
+        best_comparator=best_comparator,
+        evidence_payload=evidence_payload,
+        validation_targets=validation_payload,
+    )
 
     write_json(pack_root / "proposal.json", proposal)
     (pack_root / "README.md").write_text(
@@ -81,12 +88,17 @@ def export_code_proposal_pack(
         encoding="utf-8",
     )
 
-    write_json(context_root / "campaign.json", campaign)
-    if best_comparator is not None:
-        write_json(context_root / "best_comparator.json", _strip_row(best_comparator))
-    write_json(context_root / "parent_runs.json", [_strip_row(item) for item in parent_experiments])
+    write_json(context_root / "task_summary.json", task_summary)
     write_json(context_root / "evidence.json", evidence_payload)
     write_json(context_root / "validation_targets.json", validation_payload)
+    (context_root / "local_contracts.md").write_text(
+        _render_local_contracts(
+            campaign=campaign,
+            proposal=proposal,
+            validation_targets=validation_payload,
+        ),
+        encoding="utf-8",
+    )
     (context_root / "proposal_context.md").write_text(
         _render_proposal_context(
             campaign=campaign,
@@ -98,13 +110,6 @@ def export_code_proposal_pack(
         ),
         encoding="utf-8",
     )
-    _copy_context_doc(paths.repo_root / "docs" / "product-specs" / "code-lane-pack.md", context_root / "code-lane-pack.md")
-    _copy_context_doc(
-        paths.repo_root / "docs" / "product-specs" / "code-lane-evidence-contract.md",
-        context_root / "code-lane-evidence-contract.md",
-    )
-    _copy_context_doc(paths.repo_root / "docs" / "product-specs" / "proposal-format.md", context_root / "proposal-format.md")
-    _copy_context_doc(paths.repo_root / "docs" / "product-specs" / "runner-contract.md", context_root / "runner-contract.md")
     copied_targets = _copy_target_files(paths.repo_root, files_root, target_files)
 
     return {
@@ -447,6 +452,48 @@ def _build_validation_targets(
     }
 
 
+def _build_task_summary(
+    *,
+    campaign: dict[str, Any],
+    proposal: dict[str, Any],
+    best_comparator: dict[str, Any] | None,
+    evidence_payload: dict[str, Any],
+    validation_targets: dict[str, Any],
+) -> dict[str, Any]:
+    code_patch = proposal.get("code_patch", {})
+    return {
+        "proposal_id": proposal["proposal_id"],
+        "campaign_id": campaign["campaign_id"],
+        "lane": proposal["lane"],
+        "family": proposal["family"],
+        "kind": proposal["kind"],
+        "hypothesis": proposal["hypothesis"],
+        "rationale": proposal["rationale"],
+        "target_files": list(code_patch.get("target_files", [])) if isinstance(code_patch, dict) else [],
+        "acceptance_summary": str(code_patch.get("acceptance_summary") or "") if isinstance(code_patch, dict) else "",
+        "primary_metric": {
+            "name": campaign["primary_metric"]["name"],
+            "direction": campaign["primary_metric"]["direction"],
+        },
+        "best_comparator": (
+            {
+                "experiment_id": str(best_comparator["experiment_id"]),
+                "metric_name": str(best_comparator["primary_metric_name"]),
+                "metric_value": float(best_comparator["primary_metric_value"]),
+            }
+            if best_comparator is not None
+            else None
+        ),
+        "confirm_review_required": bool(validation_targets.get("confirm_review_required")),
+        "audit_expected": bool(validation_targets.get("audit_expected")),
+        "audit_recommended": bool(validation_targets.get("audit_recommended")),
+        "retrieval_event_id": proposal.get("retrieval_event_id"),
+        "evidence_count": int(evidence_payload.get("citation_count") or 0),
+        "warning_count": int(evidence_payload.get("warning_count") or 0),
+        "target_seam": ", ".join(list(code_patch.get("target_files", []))[:3]) if isinstance(code_patch, dict) else "",
+    }
+
+
 def _render_readme(
     *,
     campaign: dict[str, Any],
@@ -565,6 +612,39 @@ def _render_return_instructions(
     )
 
 
+def _render_local_contracts(
+    *,
+    campaign: dict[str, Any],
+    proposal: dict[str, Any],
+    validation_targets: dict[str, Any],
+) -> str:
+    target_files = list(proposal.get("code_patch", {}).get("target_files", []))
+    return "\n".join(
+        [
+            "# Local Contracts",
+            "",
+            "## Runner Contract",
+            "- The returned change must still execute through the normal `lab.cli run` path.",
+            "- The target command must continue to emit a structured `summary.json` for scoring and reporting.",
+            "- Do not introduce a second control plane or a custom one-off execution path.",
+            "",
+            "## Scientific Contract",
+            f"- Campaign comparability stays anchored to `{campaign['campaign_id']}`.",
+            f"- Primary metric remains `{campaign['primary_metric']['name']}` ({campaign['primary_metric']['direction']}).",
+            "- Runtime tuning may change execution overlays, but it must not change scientific identity.",
+            "",
+            "## Validation Contract",
+            f"- Expected direction: `{validation_targets.get('expected_direction') or proposal.get('expected_direction')}`.",
+            f"- Confirm review required: {'yes' if validation_targets.get('confirm_review_required') else 'no'}.",
+            f"- Audit recommended: {'yes' if validation_targets.get('audit_recommended') else 'no'}.",
+            "",
+            "## File Boundary",
+            "- Stay inside the allowlist below unless a directly coupled test must move with it.",
+            *(f"- `{path}`" for path in target_files),
+        ]
+    )
+
+
 def _render_proposal_context(
     *,
     campaign: dict[str, Any],
@@ -581,6 +661,7 @@ def _render_proposal_context(
         f"Proposal: `{proposal['proposal_id']}`",
         f"Lane / family / kind: `{proposal['lane']}` / `{proposal['family']}` / `{proposal['kind']}`",
         f"Idea signature: `{proposal.get('idea_signature')}`",
+        f"Target files: {', '.join(proposal.get('code_patch', {}).get('target_files', [])) or 'none'}",
         "",
         "## Hypothesis",
         proposal["hypothesis"],
@@ -655,12 +736,6 @@ def _render_proposal_context(
     return "\n".join(lines)
 
 
-def _copy_context_doc(source: Path, destination: Path) -> None:
-    if source.exists():
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-
-
 def _copy_target_files(repo_root: Path, files_root: Path, target_files: list[str]) -> list[str]:
     copied: list[str] = []
     for relative_path in target_files:
@@ -674,19 +749,6 @@ def _copy_target_files(repo_root: Path, files_root: Path, target_files: list[str
         destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         copied.append(relative_path)
     return copied
-
-
-def _strip_row(row: dict[str, Any]) -> dict[str, Any]:
-    payload: dict[str, Any] = {}
-    for key, value in row.items():
-        if isinstance(value, (str, int, float)) or value is None:
-            payload[key] = value
-            continue
-        if isinstance(value, bytes):
-            payload[key] = value.decode("utf-8", errors="replace")
-            continue
-        payload[key] = str(value)
-    return payload
 
 
 def _parent_run_entry(row: dict[str, Any]) -> dict[str, Any]:

@@ -13,12 +13,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _write_repo_skeleton(repo_root: Path) -> None:
-    (repo_root / "docs" / "design-docs").mkdir(parents=True, exist_ok=True)
+    (repo_root / "docs").mkdir(parents=True, exist_ok=True)
     (repo_root / "schemas").mkdir(parents=True, exist_ok=True)
     (repo_root / "sql").mkdir(parents=True, exist_ok=True)
     (repo_root / "campaigns" / "base_2k").mkdir(parents=True, exist_ok=True)
     (repo_root / "pyproject.toml").write_text("[project]\nname='tmp'\n", encoding="utf-8")
-    (repo_root / "docs" / "design-docs" / "index.md").write_text("# docs\n", encoding="utf-8")
+    (repo_root / "README.md").write_text("# tmp\n", encoding="utf-8")
+    (repo_root / "docs" / "runbook.md").write_text("# runbook\n", encoding="utf-8")
     (repo_root / "schemas" / "campaign.schema.json").write_text("{}\n", encoding="utf-8")
     (repo_root / "sql" / "001_ledger.sql").write_text("CREATE TABLE IF NOT EXISTS t(id INTEGER);\n", encoding="utf-8")
     (repo_root / "campaigns" / "base_2k" / "campaign.json").write_text(

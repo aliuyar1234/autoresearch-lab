@@ -168,7 +168,7 @@ class ReportGenerationTests(unittest.TestCase):
             report_payload = json.loads(Path(paths["report_json"]).read_text(encoding="utf-8"))
             report_md = Path(paths["report_md"]).read_text(encoding="utf-8")
             self.assertTrue(report_payload["recommendations"]["notes"])
-            self.assertIn("Recommendations", report_md)
+            self.assertIn("Next Actions", report_md)
 
     def test_report_starts_with_decision_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -176,6 +176,20 @@ class ReportGenerationTests(unittest.TestCase):
             report_md = Path(paths["report_md"]).read_text(encoding="utf-8")
             self.assertIn("## Decision Summary", report_md)
             self.assertLess(report_md.index("## Decision Summary"), report_md.index("## Top Outcomes"))
+
+    def test_report_exposes_trust_label_and_failure_headline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = self._run_phase6_fixture(Path(tmpdir))
+            report_payload = json.loads(Path(paths["report_json"]).read_text(encoding="utf-8"))
+            report_md = Path(paths["report_md"]).read_text(encoding="utf-8")
+            current_best = report_payload["decision_summary"]["current_best_candidate"]
+            self.assertIsNotNone(current_best)
+            self.assertIn(current_best["trust_label"], {"provisional", "confirmed", "audited", "regressed", "invalid"})
+            self.assertTrue(current_best["trust_reason"])
+            first_screen = "\n".join(report_md.splitlines()[:40])
+            self.assertIn("Trust label:", first_screen)
+            self.assertIn("Most important failure", first_screen)
+            self.assertIn("Next action:", first_screen)
 
 
 if __name__ == "__main__":

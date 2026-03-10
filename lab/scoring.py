@@ -70,6 +70,15 @@ class ScoreExplanation:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class TrustAssessment:
+    label: str
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def best_baseline(experiments: Iterable[dict[str, Any]], *, direction: str) -> BaselineRecord | None:
     best_row: dict[str, Any] | None = None
     best_metric: float | None = None
@@ -223,6 +232,45 @@ def explain_experiment_score(
     )
 
 
+def assess_experiment_trust(
+    *,
+    experiment: dict[str, Any],
+    direction: str | None = None,
+    baseline_metric: float | None = None,
+) -> TrustAssessment:
+    status = str(experiment.get("status") or "unknown")
+    run_purpose = str(experiment.get("run_purpose") or "search")
+    validation_state = str(experiment.get("validation_state") or "not_required")
+    disposition = str(experiment.get("disposition") or "")
+    metric_value = experiment.get("primary_metric_value")
+
+    if status != "completed" or metric_value is None:
+        return TrustAssessment("invalid", "run did not finish with a usable metric")
+
+    if run_purpose == "audit":
+        return TrustAssessment("audited", "measured on the audit split for robustness, not as a headline search win")
+
+    if validation_state == "passed":
+        return TrustAssessment("confirmed", "survived confirm review against a comparable baseline")
+
+    if validation_state == "failed":
+        return TrustAssessment("regressed", "failed confirm or audit review against the comparator")
+
+    if disposition in {"archived", "discarded"}:
+        delta_text = _regression_delta_text(direction=direction, baseline_metric=baseline_metric, metric_value=metric_value)
+        if delta_text:
+            return TrustAssessment("regressed", f"completed, but regressed versus the comparator {delta_text}")
+        return TrustAssessment("regressed", "completed, but did not hold up as a keep-worthy result")
+
+    if disposition == "pending_validation":
+        return TrustAssessment("provisional", "cleared the confirm bar, but still needs a completed validation review")
+
+    if run_purpose == "replay":
+        return TrustAssessment("provisional", "replay result outside the promotion path; useful for inspection, not the main leaderboard")
+
+    return TrustAssessment("provisional", "search result has not yet survived confirm or audit review")
+
+
 def _threshold_for_lane(campaign: dict[str, Any], lane: str) -> float:
     promotion = campaign["promotion"]
     if lane == "scout":
@@ -270,6 +318,16 @@ def _validation_state_for_disposition(disposition: str, *, existing: str) -> str
     if disposition in {"archived", "discarded"} and existing == "pending":
         return "failed"
     return existing
+
+
+def _regression_delta_text(*, direction: str | None, baseline_metric: float | None, metric_value: Any) -> str | None:
+    if direction not in {"min", "max"} or baseline_metric is None or metric_value is None:
+        return None
+    try:
+        delta = improvement(str(direction), float(baseline_metric), float(metric_value))
+    except (TypeError, ValueError):
+        return None
+    return f"(delta={delta:.6f})"
 
 
 def decide_lane_promotion(

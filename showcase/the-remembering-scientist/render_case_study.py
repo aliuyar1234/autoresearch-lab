@@ -90,10 +90,15 @@ def _morning_report_comparison(compare_payload: dict[str, Any] | None) -> dict[s
         pair_payload = {"pair_id": pair["pair_id"], "arms": {}}
         for arm_name in ("remembering", "amnesiac"):
             report = pair["arms"][arm_name]["report"]
+            current_best = report.get("current_best_candidate") or {}
             pair_payload["arms"][arm_name] = {
                 "report_root": report.get("report_root"),
                 "promoted_count": report.get("promoted_count"),
                 "failed_count": report.get("failed_count"),
+                "current_best_candidate": current_best.get("experiment_id"),
+                "current_best_trust_label": current_best.get("trust_label"),
+                "current_best_trust_reason": current_best.get("trust_reason"),
+                "top_failures": report.get("top_failures", []),
                 "memory_citation_coverage": report.get("memory_citation_coverage"),
                 "repeated_dead_end_rate": report.get("repeated_dead_end_rate"),
                 "validation_pass_rate": report.get("validation_pass_rate"),
@@ -187,6 +192,13 @@ def _render_case_study(
     ]
     for pair in compare_payload.get("pairs", []):
         lines.append(f"- {pair['pair_id']}: raw winner = {pair.get('winner_by_best_raw_metric') or 'n/a'}")
+        for arm_name in ("remembering", "amnesiac"):
+            report = pair["arms"][arm_name]["report"]
+            candidate = report.get("current_best_candidate") or {}
+            if candidate:
+                lines.append(
+                    f"  - {arm_name}: best candidate `{candidate['experiment_id']}` trust={candidate.get('trust_label') or 'unknown'}"
+                )
     lines.extend(["", "## Validation Summary", ""])
     if validations_payload is None:
         lines.append("- Validation artifacts are missing.")
@@ -205,6 +217,10 @@ def _render_case_study(
                 f"- {item['arm']} / {item['experiment_id']}: {item['evidence_count']} citations "
                 f"({item.get('retrieval_event_id') or 'no retrieval event'})"
             )
+        lines.extend(["", "## Exact Artifact Paths", ""])
+        lines.append(f"- Confirm comparison: `{validations_payload.get('confirm_comparison_path')}`")
+        lines.append(f"- Audit comparison: `{validations_payload.get('audit_comparison_path')}`")
+        lines.append(f"- Locked replays: `{validations_payload.get('clean_replays_path')}`")
     return "\n".join(lines) + "\n"
 
 

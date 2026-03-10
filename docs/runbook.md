@@ -154,9 +154,10 @@ python -m lab.cli run --proposal-id <proposal_id>
 The exported pack should include:
 
 - proposal json
-- target file list
-- base commit
+- task summary
+- local contracts
 - acceptance criteria
+- target file list
 - `context/evidence.json`
 - `context/validation_targets.json`
 - `context/proposal_context.md`
@@ -258,4 +259,4 @@ Before calling the lab "done enough to defend":
 - at least one code proposal pack can be exported and round-tripped
 - showcase automation runs from code
 - `doctor` returns clean output for the repo env
-- docs, specs, schemas, and the signoff matrix all match implementation reality
+- front-door docs, schemas, and the signoff matrix all match implementation reality

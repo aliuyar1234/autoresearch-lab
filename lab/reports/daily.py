@@ -12,7 +12,7 @@ from .recommendations import build_recommendations
 from ..scheduler.archive import build_archive_snapshot
 from ..scheduler.compose import flatten_override_paths
 from ..scheduler.exhaustion import exhaustion_summary
-from ..scoring import improvement
+from ..scoring import assess_experiment_trust, best_baseline, improvement
 from ..semantics import is_completed_metric_run, is_pending_validation, is_rankable_experiment, is_validated_promotion
 from ..utils import read_json
 
@@ -77,9 +77,19 @@ def build_daily_report(
     memory_summary = _build_memory_summary(window_experiments)
     scheduler_metrics = _build_scheduler_metrics(window_experiments, all_experiments)
     recommendations = _build_recommendation_section(window_experiments)
+    decision_summary = _build_decision_summary(
+        campaign=campaign,
+        window_experiments=window_experiments,
+        all_experiments=all_experiments,
+        leaderboard=leaderboard,
+        top_outcomes=top_outcomes,
+        crash_summary=crash_summary,
+        recommendations=recommendations,
+    )
     appendix = _build_appendix(
         campaign=campaign,
         window_experiments=window_experiments,
+        all_experiments=all_experiments,
         artifact_paths=artifact_paths,
         generated_at=generated_at,
         report_date=report_date,
@@ -91,6 +101,7 @@ def build_daily_report(
         "report_date": report_date,
         "generated_at": generated_at,
         "header": header,
+        "decision_summary": decision_summary,
         "top_outcomes": top_outcomes,
         "what_changed": what_changed,
         "failure_summary": crash_summary,
@@ -142,11 +153,31 @@ def _build_top_outcomes(
     direction = str(campaign["primary_metric"]["direction"])
     completed_window = [row for row in window_experiments if is_completed_metric_run(row) and is_rankable_experiment(row)]
     best_new = _top_metric_rows(completed_window, direction=direction, limit=3)
-    best_confirmed = _top_metric_rows([row for row in completed_window if is_validated_promotion(row)], direction=direction, limit=3)
+    best_confirmed = _top_metric_rows(
+        [row for row in completed_window if assess_experiment_trust(experiment=row).label in {"confirmed", "audited"}],
+        direction=direction,
+        limit=3,
+    )
     champion_update = _champion_update(campaign, window_experiments, all_experiments, leaderboard)
     return {
-        "best_new_candidates": [_outcome_row(campaign, row, champion_update.get("previous_champion_metric")) for row in best_new],
-        "best_confirmed_candidates": [_outcome_row(campaign, row, champion_update.get("previous_champion_metric")) for row in best_confirmed],
+        "best_new_candidates": [
+            _outcome_row(
+                campaign,
+                row,
+                champion_update.get("previous_champion_metric"),
+                direction=direction,
+            )
+            for row in best_new
+        ],
+        "best_confirmed_candidates": [
+            _outcome_row(
+                campaign,
+                row,
+                champion_update.get("previous_champion_metric"),
+                direction=direction,
+            )
+            for row in best_confirmed
+        ],
         "champion_update": champion_update,
     }
 
@@ -237,13 +268,18 @@ def _build_appendix(
     campaign: dict[str, Any],
     window_experiments: list[dict[str, Any]],
     *,
+    all_experiments: list[dict[str, Any]],
     artifact_paths: dict[str, str],
     generated_at: str,
     report_date: str,
     repo_root: str,
 ) -> dict[str, Any]:
+    baseline = best_baseline(
+        [row for row in all_experiments if is_completed_metric_run(row) and is_rankable_experiment(row)],
+        direction=str(campaign["primary_metric"]["direction"]),
+    )
     run_table = [
-        _appendix_row(campaign, row, repo_root=repo_root)
+        _appendix_row(campaign, row, repo_root=repo_root, baseline_metric=baseline.metric_value if baseline else None)
         for row in sorted(window_experiments, key=lambda item: str(item.get("started_at") or ""), reverse=True)
     ]
     return {
@@ -298,10 +334,15 @@ def _champion_update(
     }
 
 
-def _appendix_row(campaign: dict[str, Any], row: dict[str, Any], *, repo_root: str) -> dict[str, Any]:
+def _appendix_row(campaign: dict[str, Any], row: dict[str, Any], *, repo_root: str, baseline_metric: float | None) -> dict[str, Any]:
     runtime = _load_runtime_appendix_payload(row, repo_root=repo_root)
     peak_vram_gb = float(row.get("peak_vram_gb") or 0.0)
     max_peak_vram_gb = float(campaign["runtime"].get("max_peak_vram_gb", 0.0) or 0.0)
+    trust = assess_experiment_trust(
+        experiment=row,
+        direction=str(campaign["primary_metric"]["direction"]),
+        baseline_metric=baseline_metric,
+    )
     return {
         "experiment_id": str(row["experiment_id"]),
         "proposal_id": row.get("proposal_id"),
@@ -314,6 +355,8 @@ def _appendix_row(campaign: dict[str, Any], row: dict[str, Any], *, repo_root: s
         "disposition": row.get("disposition"),
         "validation_state": row.get("validation_state"),
         "validation_review_id": row.get("validation_review_id"),
+        "trust_label": trust.label,
+        "trust_reason": trust.reason,
         "primary_metric_value": float(row["primary_metric_value"]) if row.get("primary_metric_value") is not None else None,
         "artifact_root": row.get("artifact_root"),
         "backend": row.get("backend"),
@@ -436,17 +479,101 @@ def _build_scheduler_metrics(window_experiments: list[dict[str, Any]], all_exper
     }
 
 
-def _outcome_row(campaign: dict[str, Any], row: dict[str, Any], previous_champion_metric: float | None) -> dict[str, Any]:
+def _build_decision_summary(
+    *,
+    campaign: dict[str, Any],
+    window_experiments: list[dict[str, Any]],
+    all_experiments: list[dict[str, Any]],
+    leaderboard: dict[str, Any],
+    top_outcomes: dict[str, Any],
+    crash_summary: dict[str, Any],
+    recommendations: dict[str, Any],
+) -> dict[str, Any]:
+    candidate_row = _current_best_candidate_row(
+        leaderboard=leaderboard,
+        all_experiments=all_experiments,
+        window_experiments=window_experiments,
+        direction=str(campaign["primary_metric"]["direction"]),
+    )
+    previous_champion_metric = top_outcomes.get("champion_update", {}).get("previous_champion_metric")
+    return {
+        "current_best_candidate": _decision_candidate(
+            campaign=campaign,
+            row=candidate_row,
+            previous_champion_metric=previous_champion_metric,
+        )
+        if candidate_row is not None
+        else None,
+        "top_failures": list(crash_summary.get("entries", []))[:3],
+        "next_actions": list(recommendations.get("notes", []))[:3],
+    }
+
+
+def _current_best_candidate_row(
+    *,
+    leaderboard: dict[str, Any],
+    all_experiments: list[dict[str, Any]],
+    window_experiments: list[dict[str, Any]],
+    direction: str,
+) -> dict[str, Any] | None:
+    champion_id = leaderboard.get("champion_experiment_id")
+    if champion_id is not None:
+        champion = next((row for row in all_experiments if str(row["experiment_id"]) == str(champion_id)), None)
+        if champion is not None:
+            return champion
+    completed_window = [row for row in window_experiments if is_completed_metric_run(row) and is_rankable_experiment(row)]
+    top_rows = _top_metric_rows(completed_window, direction=direction, limit=1)
+    return top_rows[0] if top_rows else None
+
+
+def _decision_candidate(
+    *,
+    campaign: dict[str, Any],
+    row: dict[str, Any],
+    previous_champion_metric: float | None,
+) -> dict[str, Any]:
+    assessment = assess_experiment_trust(
+        experiment=row,
+        direction=str(campaign["primary_metric"]["direction"]),
+        baseline_metric=previous_champion_metric,
+    )
+    proposal_payload = _proposal_payload(row)
+    return {
+        "experiment_id": str(row["experiment_id"]),
+        "proposal_id": row.get("proposal_id"),
+        "proposal_family": row.get("proposal_family") or proposal_payload.get("family"),
+        "lane": row.get("lane"),
+        "run_purpose": row.get("run_purpose"),
+        "eval_split": row.get("eval_split"),
+        "primary_metric_value": float(row["primary_metric_value"]) if row.get("primary_metric_value") is not None else None,
+        "validation_state": row.get("validation_state"),
+        "delta_vs_previous_champion": round(
+            improvement(str(campaign["primary_metric"]["direction"]), float(previous_champion_metric), float(row["primary_metric_value"])),
+            6,
+        )
+        if previous_champion_metric is not None and row.get("primary_metric_value") is not None
+        else None,
+        "trust_label": assessment.label,
+        "trust_reason": assessment.reason,
+        "retrieval_event_id": proposal_payload.get("retrieval_event_id"),
+        "evidence_count": len(proposal_payload.get("evidence", [])),
+    }
+
+
+def _outcome_row(campaign: dict[str, Any], row: dict[str, Any], previous_champion_metric: float | None, *, direction: str) -> dict[str, Any]:
     metric_value = float(row["primary_metric_value"])
     delta = None
     if previous_champion_metric is not None:
-        delta = round(improvement(str(campaign["primary_metric"]["direction"]), previous_champion_metric, metric_value), 6)
+        delta = round(improvement(direction, previous_champion_metric, metric_value), 6)
+    trust = assess_experiment_trust(experiment=row, direction=direction, baseline_metric=previous_champion_metric)
     return {
         "experiment_id": str(row["experiment_id"]),
         "proposal_id": row.get("proposal_id"),
         "proposal_family": row.get("proposal_family") or _proposal_payload(row).get("family"),
         "primary_metric_value": metric_value,
         "delta_vs_previous_champion": delta,
+        "trust_label": trust.label,
+        "trust_reason": trust.reason,
     }
 
 

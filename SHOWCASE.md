@@ -1,197 +1,135 @@
 # The Remembering Scientist
 
-Autoresearch Lab is built around a simple idea:
+This repo's public showcase is a bounded A/B test:
 
-`A one-GPU research lab should get stronger when it can remember what it learned.`
+`Same GPU. Same campaign. Same budget. The only intended difference is memory.`
 
-This page summarizes the current showcase surface. The linked pilot notes are historical records from the first bounded A/B run, while the current repo now records first-class evidence and retrieval events in normal operation.
+The showcase compares two isolated workspaces on `base_2k`:
 
-Same GPU. Same campaign. Same budget. The only intended difference was memory.
+- `remembering`: starts from a frozen historical snapshot
+- `amnesiac`: starts from the same schema with no historical memory
 
-## What We Tested
+The current repo behavior is stricter than some older pilot writeups under `showcase/the-remembering-scientist/`. Search winners are no longer treated as trustworthy just because they topped a raw leaderboard.
 
-We ran the lab twice on `base_2k`:
+## Trust Model
 
-- `remembering`: started from a frozen historical notebook built from prior runs, proposals, archive state, and report output
-- `amnesiac`: started with no historical memory and only same-session state
+- `provisional`: a search result exists, but it has not survived confirm or audit review yet
+- `confirmed`: the candidate survived confirm review against a comparable baseline
+- `audited`: the candidate was measured on `audit_val` as a robustness check
+- `regressed`: the candidate completed, but failed review or did not hold up as a keep-worthy result
+- `invalid`: the run did not finish with a usable metric
 
-Both arms used:
+Operationally:
 
-- the same repo commit
-- the same workstation and GPU
-- the same campaign
-- the same scheduler family
-- the same confirm budget
-- the same bounded launch policy
+- `confirm` is the promotion gate for strong candidates
+- `audit` is a robustness read on `audit_val`, not the main headline metric
+- `replay` is a locked publication check on `locked_val`, outside the normal promotion path
 
-Because prep showed that short runs were finishing far earlier than their nominal wall-clock budgets, the official search arms used:
+## Exact Reproduction
+
+These are the repo-native commands. They do not require historical planning material.
+
+1. Freeze the historical seed snapshot:
 
 ```bash
-python -m lab.cli night --campaign base_2k --hours 4 --max-runs 12 --allow-confirm --seed-policy mixed
+python showcase/the-remembering-scientist/freeze_memory_snapshot.py --campaign base_2k --source-db <workspace>/lab.sqlite3 --output-root showcase/the-remembering-scientist/01_seed_snapshot
 ```
 
-That gave us a fair, bounded pilot instead of an uncontrolled flood of tiny runs.
+2. Run the official remembering vs amnesiac arms:
 
-## Why This Matters
+```bash
+python showcase/the-remembering-scientist/run_ab_test.py --campaign base_2k --output-root showcase/the-remembering-scientist --snapshot-root showcase/the-remembering-scientist/01_seed_snapshot --pairs 1 --hours 4 --max-runs 12 --allow-confirm
+```
 
-The goal was not to prove that memory always wins.
+3. Run confirm, audit, and locked replay validation artifacts:
 
-The goal was to see whether a remembering lab behaves differently in a way that matters:
+```bash
+python showcase/the-remembering-scientist/run_validations.py --campaign base_2k --output-root showcase/the-remembering-scientist
+```
 
-- does it search more strategically?
-- does it avoid wasting effort?
-- does it leave a more coherent research trail?
-- does its best idea hold up better once replayed?
+4. Render figure inputs and the generated case-study draft:
 
-## Prep Work That Changed The Interpretation
+```bash
+python showcase/the-remembering-scientist/render_case_study.py --campaign base_2k --output-root showcase/the-remembering-scientist
+```
 
-Two prep findings mattered a lot.
+If you need a non-default trainer entrypoint, pass `--target-command` or `--target-command-json` to `run_ab_test.py` and `run_validations.py`.
 
-### 1. Baseline noise was large
+## Exact Artifact Paths
 
-Repeated scout-lane baseline runs varied a lot:
+The reproducible public story lives under [showcase/the-remembering-scientist](/E:/autoresearch_lab_codex_spec_pack_patched_v1_1/autoresearch_repo/showcase/the-remembering-scientist):
 
-- `20.346421`
-- `16.601252`
-- `15.232932`
+- `01_seed_snapshot/MANIFEST.json`
+- `01_seed_snapshot/ARTIFACT_REFERENCES.json`
+- `compare.json`
+- `compare.md`
+- `candidate_summary.json`
+- `validations/candidate_pool.json`
+- `validations/confirm_comparison.json`
+- `validations/audit_comparison.json`
+- `validations/clean_replays.json`
+- `validations/validation_summary.json`
+- `figures/hero_curve.json`
+- `figures/morning_report_comparison.json`
+- `figures/retrieval_panels.json`
+- `figures/lineage_graph.json`
+- `figures/audit_panel.json`
+- `figures/repeated_dead_end.json`
+- `CASE_STUDY_DRAFT.md`
 
-Observed range:
+Each arm also keeps its own isolated workspace:
 
-- `5.113489`
+- `pair_XX/remembering/`
+- `pair_XX/amnesiac/`
 
-That meant single scout wins were not trustworthy enough to carry the showcase on their own. Confirm replays were mandatory.
+Inside each arm workspace, the most important trust-bearing artifacts are:
 
-Detailed note:
+- `lab.sqlite3`
+- `artifacts/reports/<campaign>/<date>/report.json`
+- `artifacts/reports/<campaign>/<date>/report.md`
+- `artifacts/proposals/<proposal_id>/...` when proposal export artifacts exist
 
-- [BASELINE_NOTE.md](showcase/the-remembering-scientist/02_baseline_noise/BASELINE_NOTE.md)
+## Exact Evidence Path
 
-### 2. The remembering arm needed a real seed
+The showcase is now evidence-traced in the same way normal lab runs are:
 
-The repo-default `base_2k` memory state was too thin, so we first built a non-official seed notebook and froze it.
+- generated proposals carry `retrieval_event_id` and `evidence[]`
+- retrieval lineage is persisted in SQLite through `retrieval_events`, `retrieval_event_items`, and `proposal_evidence_links`
+- morning reports expose `current_best_candidate`, `top_failures`, recommendation notes, and memory coverage metrics
+- `validations/validation_summary.json` consolidates:
+  - `memory_citation_examples`
+  - `candidate_lineage_references`
+  - `repeated_dead_end_metrics`
+  - exact paths for confirm, audit, and replay artifacts
 
-That seed captured:
+If you want to inspect the public story from raw data upward, start with:
 
-- 8 prior runs
-- multiple proposal families
-- at least one failure
-- archive state
-- a report bundle with concrete recommendations
+1. `compare.json`
+2. `validations/validation_summary.json`
+3. each arm's `report.json`
+4. the candidate proposals referenced by the finalists
 
-Seed manifest:
+## Honest Current Claim
 
-- [MANIFEST.md](showcase/the-remembering-scientist/01_seed_snapshot/MANIFEST.md)
+The honest claim is still narrow:
 
-## What Happened
+`In a bounded one-GPU A/B pilot, the amnesiac lab can find flashier raw winners, while the remembering lab is intended to produce candidates that hold up better once confirm and replay checks are applied.`
 
-### Official remembering arm
+That is a research claim about this bounded setup, not a general claim of universal superiority.
 
-- runs attempted: `12`
-- successful: `12`
-- promoted: `1`
-- failed: `0`
-- best raw candidate: `exp_20260310_001509+0000_b51db484`
-- best raw metric: `10.771031`
-- winning family/lane: `exploit` / `main`
+## Caveats That Still Matter
 
-Committed summary:
+- The historical pilot notes under `showcase/the-remembering-scientist/archive/` are real records, but some were written before the current evidence-traced reporting path existed.
+- The eval path is still noisy enough that raw search wins alone are not trustworthy.
+- One bounded A/B pair is not enough to claim broad superiority.
+- `audit` and `replay` are robustness tools; they should sharpen the story, not be rewritten into marketing certainty.
 
-- [pilot outcome](showcase/the-remembering-scientist/PILOT_OUTCOME.md)
+## What Should Match Exactly
 
-### Official amnesiac arm
+If this showcase is healthy, the same terminology should agree across the repo:
 
-- runs attempted: `12`
-- successful: `11`
-- promoted: `6`
-- failed: `1`
-- best raw candidate: `exp_20260310_001703+0000_30ecf78e`
-- best raw metric: `8.653343`
-- winning family/lane: `novel` / `scout`
+- `confirm`: promotion review on the primary search split
+- `audit`: robustness review on `audit_val`
+- `replay`: locked publication check on `locked_val`
 
-Committed summary:
-
-- [pilot outcome](showcase/the-remembering-scientist/PILOT_OUTCOME.md)
-
-At first glance, the amnesiac arm looked stronger. It found a flashier raw winner and promoted more candidates in the search window.
-
-That was exactly why the confirm stage mattered.
-
-## Confirm And Replay Results
-
-We replayed the best candidate from each arm at a bounded confirm budget and also ran a clean baseline replay.
-
-| Run | Experiment | Metric |
-| --- | --- | ---: |
-| Clean baseline replay | `exp_20260310_001901+0000_662c675f` | `19.273767` |
-| Remembering confirm | `exp_20260310_001836+0000_c53c1438` | `15.413058` |
-| Amnesiac confirm | `exp_20260310_001849+0000_09783be0` | `16.634862` |
-| Clean finalist replay | `exp_20260310_001931+0000_356ea92f` | `12.607273` |
-
-The pilot's most important result is here:
-
-- the amnesiac arm won the raw-search highlight reel
-- the remembering arm produced the candidate that held up better under replay
-
-Both confirmed finalists beat the clean baseline replay, but the remembering finalist stayed ahead after the flashy raw amnesiac win regressed.
-
-## What We Learned
-
-This pilot supports a careful version of the memory thesis:
-
-`Memory improved stability more than it improved raw flashiness.`
-
-The remembering arm looked narrower and more conservative during search. The amnesiac arm looked bolder and more explosive. But once we stopped rewarding single noisy highlights and replayed the best ideas, the remembering arm came out ahead.
-
-That is a meaningful result for a research lab. It suggests the value of memory may be less about finding the wildest first hit and more about producing ideas that survive a second look.
-
-## Caveats
-
-This is a first public-facing draft, so the caveats matter.
-
-### 1. This was a bounded pilot, not the full flagship
-
-This was one short A/B pair with confirms, not the larger multi-pair showcase plan.
-
-### 2. The eval path is still noisy
-
-The baseline noise note and the confirm regressions both point to the same thing: raw leaderboard wins are not reliable enough by themselves.
-
-### 3. The published pilot artifacts predate the strongest evidence fields
-
-The current repo does log first-class evidence and retrieval events. This particular frozen pilot was run before the showcase materials were regenerated around those stronger fields, so some of the linked writeups still rely partly on seeded state and proposal trajectory when explaining memory effects.
-
-### 4. This does not prove broad superiority
-
-This pilot does **not** justify claims like:
-
-- "Autoresearch Lab is universally better than forgetting"
-- "Autoresearch Lab is already proven better than upstream in general"
-- "The raw leaderboard alone is enough to judge the winner"
-
-## Best Honest Claim Right Now
-
-If I had to summarize the result in one line, it would be this:
-
-`In a bounded one-GPU A/B pilot, the amnesiac lab found flashier raw winners, but the remembering lab produced the candidate that held up better once the best ideas were replayed.`
-
-That is not the final flagship claim. It is the honest first signal that the flagship concept is worth continuing.
-
-## Where The Full Version Would Go Next
-
-The next stronger version of this showcase should add one or more of:
-
-- a second official A/B pair
-- stronger confirm coverage
-- tighter evaluation behavior
-- first-class memory citation logging
-- a clearer repeated-dead-end metric
-
-Until then, this pilot is best understood as a serious internal-to-public bridge:
-
-- strong enough to show the lab's identity
-- not yet strong enough to pretend the story is finished
-
-## Related Notes
-
-- [internal case study draft](showcase/the-remembering-scientist/CASE_STUDY_DRAFT.md)
-- [pilot outcome](showcase/the-remembering-scientist/PILOT_OUTCOME.md)
-- [protocol](showcase/the-remembering-scientist/00_protocol/PROTOCOL.md)
+If any doc or artifact says otherwise, trust the runtime behavior and fix the doc.

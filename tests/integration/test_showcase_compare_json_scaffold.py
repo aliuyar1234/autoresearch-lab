@@ -260,11 +260,18 @@ class ShowcaseCompareJsonScaffoldTests(unittest.TestCase):
                 payload = json.loads(figure_path.read_text(encoding="utf-8"))
                 self.assertEqual(payload["status"], "ready")
 
+            morning_report_payload = json.loads(
+                (showcase_output_root / "figures" / "morning_report_comparison.json").read_text(encoding="utf-8")
+            )
+            pair_payload = morning_report_payload["pairs"][0]
+            self.assertIn("current_best_trust_label", pair_payload["arms"]["remembering"])
+
             draft_path = showcase_output_root / "CASE_STUDY_DRAFT.md"
             self.assertTrue(draft_path.exists())
             draft_text = draft_path.read_text(encoding="utf-8")
             self.assertIn("A/B Summary", draft_text)
             self.assertIn("Validation Summary", draft_text)
+            self.assertIn("Exact Artifact Paths", draft_text)
 
 
 if __name__ == "__main__":
