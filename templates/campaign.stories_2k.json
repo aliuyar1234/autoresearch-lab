@@ -21,21 +21,24 @@
     "confirm_mode": "longer_budget"
   },
   "dataset": {
-    "source": "karpathy/tinystories-gpt4-clean",
-    "format": "text",
+    "source": "local_story_text_files",
+    "format": "utf8_text_files",
     "builder": "lab.campaigns.builders.stories_2k",
-    "trust_model": "public_hf_dataset+local_hash_manifest",
+    "trust_model": "local_hash_manifest",
     "raw_cache_root": "artifacts/cache/raw/tinystories-gpt4-clean",
-    "sampling_policy": "deterministic_hash_partition"
+    "sampling_policy": "deterministic_hash_partition",
+    "upstream_reference": "karpathy/tinystories-gpt4-clean",
+    "builder_contract": "expects UTF-8 text files in raw_cache_root and assigns splits by deterministic filename hash"
   },
   "tokenizer": {
-    "kind": "bpe",
+    "kind": "byte_fallback",
     "vocab_size": 4096,
     "artifact_files": [
       "tokenizer.json",
       "merges.txt",
       "tokenizer.meta.json"
-    ]
+    ],
+    "notes": "Deterministic byte-fallback assets written by lab.campaigns.build."
   },
   "sequence_length": 2048,
   "vocab_size": 4096,

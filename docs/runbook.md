@@ -2,6 +2,24 @@
 
 This runbook is the operator guide for Autoresearch Lab as it exists now.
 
+## 0. Learn the golden path first
+
+If you only need one path through the repo, use this one:
+
+```bash
+uv sync --group dev
+uv run arlab bootstrap
+uv run arlab preflight --campaign base_2k --benchmark-backends
+uv run arlab campaign build --campaign base_2k
+uv run arlab autotune --campaign base_2k --all-lanes
+uv run arlab night --campaign base_2k --hours 8 --allow-confirm
+uv run arlab report --campaign base_2k
+uv run arlab inspect --campaign base_2k
+uv run arlab doctor
+```
+
+Everything else in this runbook is secondary to that path.
+
 ## 1. Bootstrap a fresh clone
 
 ```bash
@@ -39,6 +57,8 @@ Migration behavior:
 
 ## 3. Build campaign assets
 
+`base_2k` is the canonical campaign.
+
 ```bash
 uv run arlab campaign list
 uv run arlab campaign show --campaign base_2k
@@ -53,6 +73,12 @@ Expected outputs:
 - packed blocks
 - integrity manifests
 - explicit `search_val`, `audit_val`, and `locked_val` split definitions
+
+Current canonical-path truth:
+
+- the builder expects local UTF-8 source files under the campaign raw cache root
+- the builder writes deterministic byte-fallback tokenizer assets
+- `prepare.py` remains the upstream truth anchor for parquet + BPE semantics
 
 ## 4. Warm runtime autotune
 
@@ -129,6 +155,8 @@ The report should surface:
 - validation pass rate
 - recommendations and latest champion context
 
+This is the official endurance proof path for the lab itself.
+
 ## 8. Inspect or backfill memory
 
 ```bash
@@ -172,13 +200,14 @@ Imported code proposals execute from an isolated snapshot under `.worktrees/` an
 
 ## 10. Run the showcase pipeline
 
-The flagship showcase is scriptable:
+The flagship showcase is scriptable, but it is a secondary proof path on top of the lab.
 
 ```bash
-python showcase/the-remembering-scientist/freeze_memory_snapshot.py --campaign base_2k --source-db lab.sqlite3
-python showcase/the-remembering-scientist/run_ab_test.py --campaign base_2k --pairs 2 --hours 6
-python showcase/the-remembering-scientist/run_validations.py --campaign base_2k
-python showcase/the-remembering-scientist/render_case_study.py --campaign base_2k
+python showcase/the-remembering-scientist/freeze_memory_snapshot.py --campaign base_2k --source-db <workspace>/lab.sqlite3 --output-root showcase/the-remembering-scientist/01_seed_snapshot
+python showcase/the-remembering-scientist/run_ab_test.py --campaign base_2k --output-root showcase/the-remembering-scientist --snapshot-root showcase/the-remembering-scientist/01_seed_snapshot --pairs 1 --hours 4 --max-runs 12 --allow-confirm
+python showcase/the-remembering-scientist/run_validations.py --campaign base_2k --output-root showcase/the-remembering-scientist
+python showcase/the-remembering-scientist/render_case_study.py --campaign base_2k --output-root showcase/the-remembering-scientist
+python tools/verify_showcase_bundle.py --showcase-root showcase/the-remembering-scientist --db-path showcase/the-remembering-scientist/pair_01/remembering/lab.sqlite3 --json
 ```
 
 Expected outputs:
@@ -189,6 +218,8 @@ Expected outputs:
 - confirm, audit, and replay artifacts under `validations/`
 - figure-input JSON under `figures/`
 - `CASE_STUDY_DRAFT.md`
+
+This is the official showcase proof path.
 
 ## 11. Cleanup and recovery
 
@@ -233,6 +264,7 @@ The lightweight signoff path is:
 
 ```bash
 python tools/ten_of_ten_signoff.py --json
+uv run python tools/parity_harness.py --json
 ```
 
 That script intentionally avoids GPU-heavy end-to-end checks. It runs:
@@ -244,6 +276,8 @@ That script intentionally avoids GPU-heavy end-to-end checks. It runs:
 
 The human-facing rubric lives in:
 
+- `docs/OPERATING_CONTRACT.md`
+- `docs/RESEARCH_CONTRACT.md`
 - `docs/product-specs/acceptance-matrix.md`
 - `docs/product-specs/ten-of-ten-signoff.md`
 
@@ -256,6 +290,7 @@ Fallback:
 Before calling the lab "done enough to defend":
 
 - baseline parity path still exists for `base_2k`
+- `docs/OPERATING_CONTRACT.md` and `docs/RESEARCH_CONTRACT.md` still match the live repo
 - fake and integration tests pass
 - GPU smoke passes on the target machine
 - validated champions are distinguishable from raw search wins

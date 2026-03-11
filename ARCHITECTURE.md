@@ -11,6 +11,10 @@ It is not a distributed platform.
 It is not an experiment tracker bolt-on.
 It is a local research lab with strong internal structure.
 
+## One-Sentence Operating Identity
+
+Autoresearch Lab is Karpathy's `autoresearch`, turned into a real local single-GPU research operating system.
+
 ## Architectural goals
 
 1. preserve the upstream repo's hackability
@@ -19,6 +23,21 @@ It is a local research lab with strong internal structure.
 4. support both structured and code-level research loops
 5. optimize for one powerful CUDA workstation
 6. produce durable artifacts and reproducible experiment history
+
+## Golden Path
+
+The architecture is allowed to be broad internally, but it should still present one obvious operator path:
+
+1. `arlab bootstrap`
+2. `arlab preflight --campaign base_2k`
+3. `arlab campaign build --campaign base_2k`
+4. `arlab autotune --campaign base_2k --all-lanes`
+5. `arlab night --campaign base_2k --hours 8 --allow-confirm`
+6. `arlab report --campaign base_2k`
+7. `arlab inspect --campaign base_2k`
+8. `arlab doctor`
+
+Everything else should stay secondary to this path.
 
 ## Top-level layers
 
@@ -109,6 +128,20 @@ They may change more often, but they:
 - must remain hackable
 - must not leak chaos into the lab layer
 
+## Canonical Campaign And Truth Anchor
+
+`base_2k` is the canonical campaign.
+
+It is the one the repo should use for:
+
+- mainline operator testing
+- parity language
+- endurance runs
+- public trust claims about the lab itself
+
+The upstream `prepare.py` / `train.py` path remains the truth anchor for baseline semantics.
+The lab-native `research/dense_gpt/` path remains the primary structured-search engine for normal operation.
+
 ## Proposal model
 
 A proposal has two independent dimensions.
@@ -149,6 +182,29 @@ The lab supports two complementary proposal lanes.
 
 The scheduler arbitrates across both lanes.
 
+## Capability Tiers
+
+The repo should think in tiers:
+
+### Proven and core
+- campaign execution
+- validation
+- reports
+- ledger state
+- doctor and cleanup
+- canonical proof paths
+
+### Useful but secondary
+- runtime autotune
+- code proposal round trips
+- non-canonical campaigns
+- showcase automation
+
+### Promising but not yet proven
+- memory as a repeatable scientific advantage
+- archive-aware scheduling as a repeatable scientific advantage
+- lab-native trainer superiority over the upstream trainer
+
 ## Core persistent objects
 
 The lab persists these first-class objects:
@@ -184,6 +240,8 @@ These are hard invariants:
 - runtime autotune overlays affect execution only and do not change scientific identity
 - proposal evidence, retrieval lineage, and negative-memory signals are durable lab state
 - raw logs do not drive promotion or scheduling
+- the showcase is a secondary proof path, not the identity of the repo
+- parity language must distinguish aligned semantics from intentional implementation differences
 
 ## Why SQLite
 
@@ -215,6 +273,7 @@ They can surface memory citation coverage, repeated-dead-end metrics, validation
 ## What to read next
 
 1. `CODEX_GUARDRAILS.md`
-2. `docs/runbook.md`
-3. `docs/product-specs/acceptance-matrix.md`
-4. `showcase/the-remembering-scientist/README.md`
+2. `docs/OPERATING_CONTRACT.md`
+3. `docs/RESEARCH_CONTRACT.md`
+4. `docs/runbook.md`
+5. `docs/product-specs/acceptance-matrix.md`

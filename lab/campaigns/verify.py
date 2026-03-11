@@ -27,6 +27,20 @@ def verify_campaign(paths: LabPaths, campaign_id: str) -> dict[str, Any]:
             continue
         checked_files.append(str(manifest_path))
         manifest_payload = read_json(manifest_path)
+        if name == campaign["assets"]["tokenizer_manifest"]:
+            manifest_kind = str(manifest_payload.get("tokenizer_kind") or "")
+            expected_kind = str(campaign["tokenizer"].get("kind") or "")
+            if manifest_kind and expected_kind and manifest_kind != expected_kind:
+                problems.append(
+                    f"tokenizer kind mismatch for {manifest_path}: manifest={manifest_kind} campaign={expected_kind}"
+                )
+        if name == "raw.manifest.json":
+            manifest_format = str(manifest_payload.get("source_format") or "")
+            expected_format = str(campaign["dataset"].get("format") or "")
+            if manifest_format and expected_format and manifest_format != expected_format:
+                problems.append(
+                    f"dataset format mismatch for {manifest_path}: manifest={manifest_format} campaign={expected_format}"
+                )
         file_root = _resolve_manifest_file_root(asset_root, name, manifest_payload)
         for entry in manifest_payload.get("files", []):
             file_path = file_root / entry["path"]

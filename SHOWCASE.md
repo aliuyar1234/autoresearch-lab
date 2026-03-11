@@ -1,6 +1,8 @@
 # The Remembering Scientist
 
-This repo's public showcase is a bounded A/B test:
+This repo's public showcase is a bounded A/B test.
+
+It is a secondary proof path on top of the lab, not the identity of the repo:
 
 `Same GPU. Same campaign. Same budget. The only intended difference is memory.`
 
@@ -25,7 +27,7 @@ Operationally:
 - `audit` is a robustness read on `audit_val`, not the main headline metric
 - `replay` is a locked publication check on `locked_val`, outside the normal promotion path
 
-## Exact Reproduction
+## Official Proof Path
 
 These are the repo-native commands. They do not require historical planning material.
 
@@ -123,9 +125,9 @@ If you want a single mechanical trust check before reading the narrative, run `t
 
 The honest claim is still narrow:
 
-`In a bounded one-GPU A/B pilot, the amnesiac lab can find flashier raw winners, while the remembering lab is intended to produce candidates that hold up better once confirm and replay checks are applied.`
+`In a bounded one-GPU A/B pilot, the remembering arm increases evidence citation density and historical grounding, while final winners can still go either way after confirm, audit, and replay checks.`
 
-That is a research claim about this bounded setup, not a general claim of universal superiority.
+That is a research claim about this bounded setup, not a claim about the whole lab and not a general claim of universal superiority.
 
 ## Caveats That Still Matter
 

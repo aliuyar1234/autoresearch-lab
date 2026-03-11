@@ -1,8 +1,8 @@
 {
   "campaign_id": "base_2k",
   "version": "1.1.0",
-  "title": "Base 2k climbmix parity campaign",
-  "description": "Primary baseline-parity campaign preserving the upstream 2048-context, 8192-vocab, 300-second fixed-budget spirit.",
+  "title": "Base 2k canonical lab campaign",
+  "description": "Canonical single-GPU campaign preserving the upstream 2048-context, 8192-vocab, 300-second fixed-budget spirit through local lab assets.",
   "active": true,
   "comparability_group": "base_2k",
   "primary_metric": {
@@ -22,21 +22,24 @@
     "confirm_mode": "longer_budget_then_optional_second_seed"
   },
   "dataset": {
-    "source": "karpathy/climbmix-400b-shuffle",
-    "format": "parquet",
+    "source": "local_text_shards_named_like_climbmix",
+    "format": "utf8_text_files",
     "builder": "lab.campaigns.builders.base_2k",
-    "trust_model": "public_hf_dataset+local_hash_manifest",
+    "trust_model": "local_hash_manifest",
     "raw_cache_root": "artifacts/cache/raw/climbmix-400b-shuffle",
-    "sampling_policy": "all_shards_except_explicit_holdouts"
+    "sampling_policy": "all_files_except_explicit_holdouts",
+    "upstream_reference": "karpathy/climbmix-400b-shuffle",
+    "builder_contract": "expects one UTF-8 text file per shard-like filename under raw_cache_root; it does not read parquet directly"
   },
   "tokenizer": {
-    "kind": "bpe",
+    "kind": "byte_fallback",
     "vocab_size": 8192,
     "artifact_files": [
       "tokenizer.json",
       "merges.txt",
       "tokenizer.meta.json"
-    ]
+    ],
+    "notes": "Deterministic byte-fallback assets written by lab.campaigns.build; not the upstream rustbpe tokenizer."
   },
   "sequence_length": 2048,
   "vocab_size": 8192,
@@ -106,7 +109,7 @@
   "baseline": {
     "name": "upstream_parity_seed",
     "source": "karpathy/autoresearch",
-    "target_metric": "match semantics, not exact floating point identity",
-    "notes": "Use as campaign parity reference and regression guard."
+    "target_metric": "match sequence-length, vocab-size, budget, and val_bpb semantics rather than exact floating point identity",
+    "notes": "Use as the upstream truth anchor and regression guard. Data and tokenizer mechanics are intentionally not identical."
   }
 }

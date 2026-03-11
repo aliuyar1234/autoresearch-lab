@@ -15,11 +15,17 @@ SPEC_LINT_SCRIPT = Path("tools") / ("spec_lint" + ".py")
 SELECTED_TESTS = [
     "tests/unit/ledger/test_multi_file_migrations.py",
     "tests/integration/test_eval_split_contract.py",
+    "tests/integration/test_campaign_build_verify.py",
     "tests/integration/test_confirm_promotion_requires_review.py",
     "tests/integration/test_memory_backfill_from_existing_ledger.py",
     "tests/integration/test_autotune_runtime_override.py",
     "tests/integration/test_code_proposal_export_includes_evidence.py",
     "tests/integration/test_showcase_compare_json_scaffold.py",
+    "tests/integration/test_parity_harness.py",
+]
+CONTRACT_DOCS = [
+    REPO_ROOT / "docs" / "OPERATING_CONTRACT.md",
+    REPO_ROOT / "docs" / "RESEARCH_CONTRACT.md",
 ]
 
 
@@ -39,6 +45,18 @@ def _run_command(*, label: str, command: list[str], cwd: Path, env: dict[str, st
         "ok": completed.returncode == 0,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
+    }
+
+
+def _check_contract_docs() -> dict[str, Any]:
+    missing = [str(path) for path in CONTRACT_DOCS if not path.exists()]
+    return {
+        "label": "contract_docs",
+        "command": ["check", *[str(path) for path in CONTRACT_DOCS]],
+        "returncode": 0 if not missing else 1,
+        "ok": not missing,
+        "stdout": "" if not missing else "",
+        "stderr": "" if not missing else "\n".join(f"missing contract doc: {path}" for path in missing),
     }
 
 
@@ -71,10 +89,19 @@ def main(argv: list[str] | None = None) -> int:
     env["PYTHONPATH"] = str(REPO_ROOT) if not existing_pythonpath else os.pathsep.join([str(REPO_ROOT), existing_pythonpath])
 
     steps: list[dict[str, Any]] = []
+    steps.append(_check_contract_docs())
     steps.append(
         _run_command(
             label="spec_lint",
             command=[sys.executable, str(SPEC_LINT_SCRIPT)],
+            cwd=REPO_ROOT,
+            env=env,
+        )
+    )
+    steps.append(
+        _run_command(
+            label="parity_harness",
+            command=[sys.executable, str(REPO_ROOT / "tools" / "parity_harness.py"), "--json"],
             cwd=REPO_ROOT,
             env=env,
         )

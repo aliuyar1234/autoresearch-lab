@@ -3,6 +3,7 @@
 This directory is the reproducible operator path for the memory-vs-amnesia showcase.
 
 It is not a second control plane. The scripts here orchestrate isolated lab workspaces and then summarize their outputs.
+It is also not the main identity of the repo; it is the secondary public proof path layered on top of the lab.
 
 ## Terminology
 
@@ -12,7 +13,7 @@ It is not a second control plane. The scripts here orchestrate isolated lab work
 
 Those meanings should stay stable across scripts, reports, and docs.
 
-## Exact Workflow
+## Official Workflow
 
 1. Freeze the seed snapshot used by the remembering arm:
 
@@ -81,6 +82,12 @@ Use these files when checking the public claim:
 4. the finalist proposals
 
 Run `tools/verify_showcase_bundle.py` before publishing or citing the bundle as evidence.
+
+Current interpretation discipline:
+
+- higher memory citation coverage does not automatically mean better final outcomes
+- raw winners, confirmed winners, and audited winners can diverge
+- a healthy showcase is allowed to produce mixed or hypothesis-negative results
 
 ## What Is Historical
 

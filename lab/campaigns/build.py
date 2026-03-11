@@ -28,7 +28,7 @@ def build_campaign(paths: LabPaths, campaign_id: str, *, source_dir: str | Path 
         raise CampaignBuildError(f"no source documents found in {source_root}")
 
     raw_manifest_path = asset_root / "raw.manifest.json"
-    raw_manifest = _build_raw_manifest(source_root)
+    raw_manifest = _build_raw_manifest(source_root, campaign)
     _write_manifest(raw_manifest_path, raw_manifest)
 
     tokenizer_manifest = _build_tokenizer_assets(asset_root, campaign)
@@ -51,7 +51,7 @@ def build_campaign(paths: LabPaths, campaign_id: str, *, source_dir: str | Path 
     }
 
 
-def _build_raw_manifest(source_root: Path) -> dict[str, Any]:
+def _build_raw_manifest(source_root: Path, campaign: dict[str, Any]) -> dict[str, Any]:
     files = []
     for path in sorted(source_root.iterdir()):
         if path.is_file():
@@ -64,19 +64,31 @@ def _build_raw_manifest(source_root: Path) -> dict[str, Any]:
             )
     return {
         "created_at": utc_now_iso(),
+        "campaign_id": campaign["campaign_id"],
         "source_root": str(source_root),
+        "source_format": str(campaign["dataset"].get("format", "")),
+        "trust_model": str(campaign["dataset"].get("trust_model", "")),
+        "sampling_policy": str(campaign["dataset"].get("sampling_policy", "")),
+        "builder_contract": str(campaign["dataset"].get("builder_contract", "")),
+        "upstream_reference": str(campaign["dataset"].get("upstream_reference", "")),
         "files": files,
     }
 
 
 def _build_tokenizer_assets(asset_root: Path, campaign: dict[str, Any]) -> dict[str, Any]:
+    tokenizer_kind = str(campaign["tokenizer"].get("kind", "byte_fallback"))
+    if tokenizer_kind != "byte_fallback":
+        raise CampaignBuildError(
+            f"campaign {campaign['campaign_id']} declares tokenizer.kind={tokenizer_kind!r}, "
+            "but the current campaign builder only supports byte_fallback assets"
+        )
     artifact_files = campaign["tokenizer"]["artifact_files"]
     tokenizer_path = asset_root / artifact_files[0]
     merges_path = asset_root / artifact_files[1]
     meta_path = asset_root / artifact_files[2]
 
     tokenizer_payload = {
-        "kind": "byte_fallback",
+        "kind": tokenizer_kind,
         "campaign_id": campaign["campaign_id"],
         "bos_token_id": 1,
         "pad_token_id": 0,
@@ -90,6 +102,8 @@ def _build_tokenizer_assets(asset_root: Path, campaign: dict[str, Any]) -> dict[
     return {
         "created_at": utc_now_iso(),
         "campaign_id": campaign["campaign_id"],
+        "tokenizer_kind": tokenizer_kind,
+        "vocab_size": campaign["tokenizer"]["vocab_size"],
         "files": [
             _file_entry(asset_root, artifact_files[0]),
             _file_entry(asset_root, artifact_files[1]),
@@ -122,6 +136,7 @@ def _build_pretokenized_assets(asset_root: Path, campaign: dict[str, Any], split
         "created_at": utc_now_iso(),
         "campaign_id": campaign["campaign_id"],
         "sequence_length": campaign["sequence_length"],
+        "tokenizer_kind": str(campaign["tokenizer"].get("kind", "")),
         "bos_token_id": 1,
         "files": manifest_files,
     }
@@ -153,6 +168,7 @@ def _build_packed_assets(asset_root: Path, campaign: dict[str, Any], pretokenize
         "created_at": utc_now_iso(),
         "campaign_id": campaign["campaign_id"],
         "sequence_length": campaign["sequence_length"],
+        "tokenizer_kind": str(campaign["tokenizer"].get("kind", "")),
         "files": packed_files,
     }
 

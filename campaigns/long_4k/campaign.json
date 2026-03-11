@@ -21,21 +21,24 @@
     "confirm_mode": "longer_budget"
   },
   "dataset": {
-    "source": "karpathy/climbmix-400b-shuffle",
-    "format": "parquet",
+    "source": "local_text_shards_named_like_climbmix",
+    "format": "utf8_text_files",
     "builder": "lab.campaigns.builders.long_4k",
-    "trust_model": "public_hf_dataset+local_hash_manifest",
+    "trust_model": "local_hash_manifest",
     "raw_cache_root": "artifacts/cache/raw/climbmix-400b-shuffle",
-    "sampling_policy": "all_shards_except_explicit_holdouts"
+    "sampling_policy": "all_files_except_explicit_holdouts",
+    "upstream_reference": "karpathy/climbmix-400b-shuffle",
+    "builder_contract": "expects one UTF-8 text file per shard-like filename under raw_cache_root; it does not read parquet directly"
   },
   "tokenizer": {
-    "kind": "bpe",
+    "kind": "byte_fallback",
     "vocab_size": 8192,
     "artifact_files": [
       "tokenizer.json",
       "merges.txt",
       "tokenizer.meta.json"
-    ]
+    ],
+    "notes": "Deterministic byte-fallback assets written by lab.campaigns.build."
   },
   "sequence_length": 4096,
   "vocab_size": 8192,

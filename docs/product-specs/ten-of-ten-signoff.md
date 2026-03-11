@@ -24,6 +24,7 @@ python tools/ten_of_ten_signoff.py --json
 
 - [ ] `pyproject.toml`, `README.md`, `AGENTS.md`, and `ARCHITECTURE.md` describe the repo as `Autoresearch Lab`
 - [ ] no key metadata still describes the project as a generic swarm or upstream clone
+- [ ] one golden operator path is obvious from the repo front door
 
 ### 2. Migrations are real
 
@@ -36,6 +37,7 @@ python tools/ten_of_ten_signoff.py --json
 - [ ] `eval_split` is persisted per run
 - [ ] `run_purpose` is persisted per run
 - [ ] `search_val`, `audit_val`, and `locked_val` are campaign-level concepts, not hidden convention
+- [ ] the canonical campaign does not claim a more realistic data/tokenizer path than the builder actually materializes
 
 ### 4. Validation is the promotion gate
 
@@ -66,6 +68,7 @@ python tools/ten_of_ten_signoff.py --json
 - [ ] exported code proposal packs include evidence and validation context
 - [ ] returned patches or worktrees preserve lineage
 - [ ] imported code runs become first-class experiments with normal reporting and memory ingestion
+- [ ] code lane stays secondary to the golden operator path
 
 ### 9. Showcase is reproducible
 
@@ -80,14 +83,18 @@ python tools/ten_of_ten_signoff.py --json
 - [ ] the runbook reflects actual commands
 - [ ] the acceptance matrix is still true
 - [ ] a new operator could understand what counts as proof from the repo alone
+- [ ] `tools/parity_harness.py` reports the current upstream-vs-lab contract honestly
 
 ## Lightweight evidence pack
 
 The signoff is strongest when you can point to:
 
 - `docs/product-specs/acceptance-matrix.md`
+- `docs/OPERATING_CONTRACT.md`
+- `docs/RESEARCH_CONTRACT.md`
 - `docs/runbook.md`
 - `showcase/the-remembering-scientist/README.md`
+- `uv run python tools/parity_harness.py --json`
 - `python tools/verify_showcase_bundle.py --showcase-root showcase/the-remembering-scientist --db-path showcase/the-remembering-scientist/pair_01/remembering/lab.sqlite3 --json`
 - report JSON/Markdown under `artifacts/reports/`
 - validation reviews in SQLite

@@ -44,6 +44,15 @@ class CampaignBuildVerifyTests(unittest.TestCase):
             build_payload = json.loads(build.stdout)
             self.assertTrue(build_payload["ok"])
 
+            asset_root = temp_root / "artifacts" / "cache" / "campaigns" / "base_2k"
+            raw_manifest = json.loads((asset_root / "raw.manifest.json").read_text(encoding="utf-8"))
+            tokenizer_manifest = json.loads((asset_root / "tokenizer.manifest.json").read_text(encoding="utf-8"))
+            tokenizer_meta = json.loads((asset_root / "tokenizer.meta.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(raw_manifest["source_format"], "utf8_text_files")
+            self.assertEqual(tokenizer_manifest["tokenizer_kind"], "byte_fallback")
+            self.assertEqual(tokenizer_meta["kind"], "byte_fallback")
+
             packed_manifest_path = temp_root / "artifacts" / "cache" / "campaigns" / "base_2k" / "packed.manifest.json"
             first_manifest = packed_manifest_path.read_text(encoding="utf-8")
 
