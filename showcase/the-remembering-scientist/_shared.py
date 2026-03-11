@@ -17,9 +17,11 @@ REPO_ROOT = CURRENT_DIR.parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from lab.campaigns import load_campaign
+from lab.campaigns import build_campaign, load_campaign
+from lab.campaigns.load import resolve_asset_root
 from lab.ledger.db import apply_migrations, connect
-from lab.ledger.queries import get_experiment, get_proposal, list_campaign_experiments, list_campaign_proposals, list_daily_reports, upsert_campaign, upsert_proposal
+from lab.ledger.queries import get_experiment, get_proposal, list_campaign_experiments, list_campaign_proposals, list_daily_reports, list_validation_reviews
+from lab.memory import backfill_memory
 from lab.paths import build_paths, ensure_managed_roots
 from lab.proposals import normalize_proposal_payload
 from lab.reports import generate_report_bundle
@@ -137,6 +139,7 @@ def prepare_workspace(
     *,
     workspace_root: Path,
     snapshot_root: Path | None,
+    campaign_id: str | None = None,
 ):
     if workspace_root.exists():
         raise FileExistsError(f"workspace root already exists: {workspace_root}")
@@ -146,6 +149,10 @@ def prepare_workspace(
         _seed_workspace_from_snapshot(paths, snapshot_root)
     apply_migrations(paths.db_path, paths.sql_root)
     _normalize_transient_proposals(paths.db_path, paths.proposals_root)
+    if campaign_id:
+        _sync_workspace_campaign_assets(paths, campaign_id)
+        if snapshot_root is not None:
+            _backfill_legacy_snapshot_memory(paths, campaign_id)
     return paths
 
 
@@ -664,20 +671,14 @@ def snapshot_counts(snapshot_db_path: Path) -> dict[str, int]:
 
 def _fill_queue(paths, campaign: dict[str, Any], *, allow_confirm: bool) -> int:
     with connect(paths.db_path) as connection:
-        timestamp = utc_now_iso()
-        upsert_campaign(connection, campaign, timestamp=timestamp)
         planned = plan_structured_queue(
             connection,
             paths=paths,
             campaign=campaign,
             count=5,
             lane_mix=_night_lane_mix(allow_confirm),
-            persist=False,
+            persist=True,
         )
-        for proposal in planned:
-            validate_payload(proposal, load_schema(paths.schemas_root / "proposal.schema.json"))
-            upsert_proposal(connection, proposal, updated_at=proposal["created_at"])
-        connection.commit()
         return len(planned)
 
 
@@ -717,6 +718,50 @@ def _seed_workspace_from_snapshot(paths, snapshot_root: Path) -> None:
         destination_root = paths.artifacts_root / folder_name
         if source_root.exists():
             shutil.copytree(source_root, destination_root, dirs_exist_ok=True)
+
+
+def _sync_workspace_campaign_assets(paths, campaign_id: str) -> None:
+    campaign = load_campaign(paths, campaign_id)
+    workspace_asset_root = resolve_asset_root(paths, campaign)
+    packed_manifest_path = workspace_asset_root / campaign["assets"]["packed_manifest"]
+    if packed_manifest_path.exists():
+        return
+
+    canonical_paths = build_paths(load_settings(repo_root=REPO_ROOT, env={}))
+    canonical_campaign = load_campaign(canonical_paths, campaign_id)
+    canonical_asset_root = resolve_asset_root(canonical_paths, canonical_campaign)
+    canonical_packed_manifest_path = canonical_asset_root / canonical_campaign["assets"]["packed_manifest"]
+    if not canonical_packed_manifest_path.exists():
+        build_campaign(canonical_paths, campaign_id)
+    if not canonical_packed_manifest_path.exists():
+        raise FileNotFoundError(
+            f"canonical campaign assets are missing for showcase workspace sync: {canonical_packed_manifest_path}"
+        )
+
+    workspace_asset_root.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(canonical_asset_root, workspace_asset_root, dirs_exist_ok=True)
+
+
+def _backfill_legacy_snapshot_memory(paths, campaign_id: str) -> None:
+    with connect(paths.db_path) as connection:
+        memory_count = int(connection.execute("SELECT COUNT(*) FROM memory_records").fetchone()[0])
+        if memory_count > 0:
+            return
+        campaign = load_campaign(paths, campaign_id)
+        experiments = list_campaign_experiments(connection, campaign_id)
+        reviews = list_validation_reviews(connection, campaign_id=campaign_id)
+        reports = list_daily_reports(connection, campaign_id)
+        if not experiments and not reviews and not reports:
+            return
+        backfill_memory(
+            connection,
+            paths=paths,
+            campaign=campaign,
+            experiments=experiments,
+            validation_reviews=reviews,
+            reports=reports,
+        )
+        connection.commit()
 
 
 def _normalize_transient_proposals(db_path: Path, proposals_root: Path) -> None:

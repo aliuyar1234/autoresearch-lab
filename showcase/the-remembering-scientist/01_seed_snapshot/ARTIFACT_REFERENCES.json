@@ -1,0 +1,15 @@
+{
+  "copied": {
+    "archive": [
+      {
+        "campaign_id": "base_2k",
+        "copied_path": "E:\\autoresearch_lab_codex_spec_pack_patched_v1_1\\autoresearch_repo\\showcase\\the-remembering-scientist\\01_seed_snapshot\\archive\\base_2k",
+        "source_path": "C:\\Users\\User\\AppData\\Local\\Temp\\tmpft_7q79r\\refresh_workspace\\artifacts\\archive\\base_2k"
+      }
+    ],
+    "proposals": [],
+    "reports": []
+  },
+  "copy_artifacts": true,
+  "source_artifacts_root": "C:\\Users\\User\\AppData\\Local\\Temp\\tmpft_7q79r\\refresh_workspace\\artifacts"
+}

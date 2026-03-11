@@ -63,8 +63,16 @@ def main(argv: list[str] | None = None) -> int:
         order = pair_order_for_index(index=pair_index, order_mode=str(args.order))
 
         workspace_map = {
-            "remembering": prepare_workspace(workspace_root=pair_root / "remembering", snapshot_root=args.snapshot_root.resolve()),
-            "amnesiac": prepare_workspace(workspace_root=pair_root / "amnesiac", snapshot_root=None),
+            "remembering": prepare_workspace(
+                workspace_root=pair_root / "remembering",
+                snapshot_root=args.snapshot_root.resolve(),
+                campaign_id=str(campaign["campaign_id"]),
+            ),
+            "amnesiac": prepare_workspace(
+                workspace_root=pair_root / "amnesiac",
+                snapshot_root=None,
+                campaign_id=str(campaign["campaign_id"]),
+            ),
         }
         arms: dict[str, Any] = {}
         for arm_name in order:
@@ -102,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     compare_payload = {
         "campaign_id": campaign["campaign_id"],
         "repo_commit": current_repo_commit(),
-        "snapshot_manifest_path": str(args.snapshot_root.resolve() / "MANIFEST.json") if args.snapshot_root else None,
+        "snapshot_manifest_path": str(args.snapshot_root.resolve() / "MANIFEST.json") if snapshot_manifest is not None else None,
         "pairs": pair_summaries,
         "aggregate": aggregate_compare(campaign=campaign, pairs=pair_summaries),
         "candidate_summary_path": str(output_root / "candidate_summary.json"),

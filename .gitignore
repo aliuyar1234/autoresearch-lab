@@ -28,6 +28,7 @@ PERSONAL_*.md
 dev/
 artifacts/
 .lab.env
+showcase/the-remembering-scientist/live_runs/
 
 # Results file
 results.tsv

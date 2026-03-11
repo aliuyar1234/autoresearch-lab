@@ -1,0 +1,24 @@
+{
+  "artifact_reference_path": "E:\\autoresearch_lab_codex_spec_pack_patched_v1_1\\autoresearch_repo\\showcase\\the-remembering-scientist\\01_seed_snapshot\\ARTIFACT_REFERENCES.json",
+  "counts": {
+    "daily_reports": 1,
+    "experiments": 8,
+    "memory_records": 17,
+    "proposals": 10,
+    "validation_reviews": 0
+  },
+  "db_sha256": "f29f86cb11c73855d27405a807d945f438456ef756b579b21c4bc663ea542b61",
+  "excluded_sources": [],
+  "included_campaign_ids": [
+    "base_2k"
+  ],
+  "included_source_kinds": [
+    "champion",
+    "daily_report",
+    "experiment"
+  ],
+  "snapshot_db_path": "E:\\autoresearch_lab_codex_spec_pack_patched_v1_1\\autoresearch_repo\\showcase\\the-remembering-scientist\\01_seed_snapshot\\lab.sqlite3",
+  "snapshot_hash": "c0c2ee7492f1584c17ddfdc725cb67e335e40f3d983efa118243aabacd0df311",
+  "snapshot_timestamp": "2026-03-11T16:21:23+00:00",
+  "source_db_path": "C:\\Users\\User\\AppData\\Local\\Temp\\tmpft_7q79r\\refresh_workspace\\lab.sqlite3"
+}

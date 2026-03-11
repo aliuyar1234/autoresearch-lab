@@ -53,7 +53,8 @@ def _seed_bundle(root: Path) -> tuple[Path, Path]:
     timestamp = "2026-03-11T12:00:00+00:00"
 
     apply_migrations(db_path, REPO_ROOT / "sql")
-    with connect(db_path) as connection:
+    connection = connect(db_path)
+    with connection:
         connection.execute(
             """
             INSERT INTO campaigns (
@@ -547,6 +548,8 @@ def _seed_bundle(root: Path) -> tuple[Path, Path]:
             "repeated_dead_end_metrics": {"remembering": 0.0, "amnesiac": 0.1},
         },
     )
+    connection.commit()
+    connection.close()
     return showcase_root, db_path
 
 

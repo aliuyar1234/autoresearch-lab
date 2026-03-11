@@ -13,6 +13,7 @@ from ._cli_helpers import PHASE6_TARGET, SAMPLE_PROPOSAL, run_cli, target_json_c
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SHOWCASE_ROOT = REPO_ROOT / "showcase" / "the-remembering-scientist"
+VERIFY_TOOL = REPO_ROOT / "tools" / "verify_showcase_bundle.py"
 
 
 def _write_proposal(
@@ -115,6 +116,28 @@ def _run_showcase_script(script_name: str, *args: str) -> subprocess.CompletedPr
     )
 
 
+def _run_showcase_verifier(showcase_root: Path, db_path: Path) -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ)
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(REPO_ROOT) if not existing_pythonpath else os.pathsep.join([str(REPO_ROOT), existing_pythonpath])
+    return subprocess.run(
+        [
+            sys.executable,
+            str(VERIFY_TOOL),
+            "--showcase-root",
+            str(showcase_root),
+            "--db-path",
+            str(db_path),
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 class ShowcaseCompareJsonScaffoldTests(unittest.TestCase):
     def test_showcase_pipeline_generates_compare_validation_and_render_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -178,6 +201,7 @@ class ShowcaseCompareJsonScaffoldTests(unittest.TestCase):
             manifest = json.loads((snapshot_root / "MANIFEST.json").read_text(encoding="utf-8"))
             self.assertGreater(manifest["counts"]["experiments"], 0)
             self.assertGreater(manifest["counts"]["memory_records"], 0)
+            (snapshot_root / "MANIFEST.json").unlink()
 
             compare = _run_showcase_script(
                 "run_ab_test.py",
@@ -200,6 +224,7 @@ class ShowcaseCompareJsonScaffoldTests(unittest.TestCase):
             self.assertEqual(compare.returncode, 0, compare.stderr)
             compare_payload = json.loads(compare.stdout)
             self.assertEqual(compare_payload["aggregate"]["pair_count"], 1)
+            self.assertIsNone(compare_payload["snapshot_manifest_path"])
             self.assertTrue((showcase_output_root / "compare.json").exists())
             self.assertTrue((showcase_output_root / "compare.md").exists())
             self.assertTrue((showcase_output_root / "candidate_summary.json").exists())
@@ -210,6 +235,10 @@ class ShowcaseCompareJsonScaffoldTests(unittest.TestCase):
                 self.assertGreater(arm["session"]["run_count"], 0)
                 self.assertTrue(Path(arm["run_manifest_path"]).exists())
                 self.assertTrue(Path(arm["candidate_summary_path"]).exists())
+                packed_manifest_path = (
+                    showcase_output_root / "pair_01" / arm_name / "artifacts" / "cache" / "campaigns" / "base_2k" / "packed.manifest.json"
+                )
+                self.assertTrue(packed_manifest_path.exists(), packed_manifest_path)
 
             validations = _run_showcase_script(
                 "run_validations.py",
@@ -272,6 +301,14 @@ class ShowcaseCompareJsonScaffoldTests(unittest.TestCase):
             self.assertIn("A/B Summary", draft_text)
             self.assertIn("Validation Summary", draft_text)
             self.assertIn("Exact Artifact Paths", draft_text)
+
+            verifier = _run_showcase_verifier(
+                showcase_output_root,
+                showcase_output_root / "pair_01" / "remembering" / "lab.sqlite3",
+            )
+            self.assertEqual(verifier.returncode, 0, verifier.stderr)
+            verifier_payload = json.loads(verifier.stdout)
+            self.assertTrue(verifier_payload["ok"])
 
 
 if __name__ == "__main__":

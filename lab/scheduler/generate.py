@@ -66,6 +66,7 @@ def generate_structured_proposal_from_state(
     memory_records: list[dict[str, Any]] | None = None,
     family: str | None = None,
     persist: bool = False,
+    finalize: bool = True,
 ) -> dict[str, Any]:
     attempt_plan = _family_attempt_plan(campaign, lane, proposals, experiments, requested_family=family)
     seen_fingerprints = _existing_fingerprints(proposals)
@@ -102,7 +103,7 @@ def generate_structured_proposal_from_state(
                 upsert_proposal(connection, public_payload, updated_at=public_payload["created_at"])
                 persist_proposal_memory_state(connection, paths=paths, proposal=selected)
                 connection.commit()
-        return _finalize_generated_payload(selected)
+        return _finalize_generated_payload(selected) if finalize else selected
     if family:
         raise SchedulerGenerationError(f"could not generate a {family} structured proposal for {campaign['campaign_id']}:{lane}")
     raise SchedulerGenerationError(f"could not generate any structured proposal for {campaign['campaign_id']}:{lane}")
@@ -141,6 +142,7 @@ def plan_structured_queue(
             memory_records=memory_records,
             family=family,
             persist=False,
+            finalize=False,
         )
         proposals.append(_proposal_row_like(selected))
         generated.append(selected)
@@ -148,8 +150,9 @@ def plan_structured_queue(
     if persist:
         for proposal in ranked:
             _persist_generated_proposal(paths, proposal)
+            public_payload = _finalize_generated_payload(proposal)
             upsert_campaign(connection, campaign, timestamp=proposal["created_at"])
-            upsert_proposal(connection, proposal, updated_at=proposal["created_at"])
+            upsert_proposal(connection, public_payload, updated_at=public_payload["created_at"])
             persist_proposal_memory_state(connection, paths=paths, proposal=proposal)
         connection.commit()
     return [_finalize_generated_payload(proposal) for proposal in ranked]
