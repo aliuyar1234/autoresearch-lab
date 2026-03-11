@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..ledger.queries import upsert_daily_report
+from ..ledger.queries import upsert_campaign, upsert_daily_report
 from ..memory import ingest_report_memory
 from ..paths import LabPaths, report_root
 from ..utils import utc_now_iso, write_json
@@ -69,6 +69,7 @@ def generate_report_bundle(
     Path(artifact_paths["crash_summary_md"]).write_text(render_crash_summary_markdown(crash_summary), encoding="utf-8")
     _write_archive_champion_card(paths, campaign["campaign_id"], champion_cards)
 
+    upsert_campaign(connection, campaign, timestamp=generated_at)
     upsert_daily_report(
         connection,
         campaign_id=str(campaign["campaign_id"]),

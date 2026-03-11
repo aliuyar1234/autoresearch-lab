@@ -21,15 +21,16 @@ This matrix defines the minimum bar for calling the repo a real lab rather than 
 
 The project may be called complete only when all of the following are true:
 
-- [ ] `python -m lab.cli bootstrap` initializes a clean repo and applies all migrations
-- [ ] `python -m lab.cli preflight --campaign base_2k` succeeds on the target workstation
-- [ ] `python -m lab.cli campaign build --campaign base_2k` materializes assets with explicit eval splits
-- [ ] `python -m lab.cli autotune --campaign base_2k --all-lanes` produces reusable runtime overlays
-- [ ] `python -m lab.cli run --campaign base_2k --generate structured --lane scout` completes and records artifacts
-- [ ] `python -m lab.cli validate --experiment <id> --mode confirm` can turn a raw candidate into a validated promotion
-- [ ] `python -m lab.cli memory inspect --campaign base_2k` shows evidence-bearing memory records
+- [ ] `uv run arlab bootstrap` initializes a clean repo and applies all migrations
+- [ ] `uv run arlab preflight --campaign base_2k` succeeds on the target workstation
+- [ ] `uv run arlab campaign build --campaign base_2k` materializes assets with explicit eval splits
+- [ ] `uv run arlab autotune --campaign base_2k --all-lanes` produces reusable runtime overlays
+- [ ] `uv run arlab run --campaign base_2k --generate structured --lane scout` completes and records artifacts
+- [ ] `uv run arlab validate --experiment <id> --mode confirm` can turn a raw candidate into a validated promotion
+- [ ] `uv run arlab memory inspect --campaign base_2k` shows evidence-bearing memory records
 - [ ] at least one code proposal pack can be exported and imported with evidence context intact
 - [ ] `python showcase/the-remembering-scientist/run_ab_test.py --campaign base_2k` can generate compare-ready showcase state
+- [ ] `python tools/verify_showcase_bundle.py --showcase-root showcase/the-remembering-scientist --db-path showcase/the-remembering-scientist/pair_01/remembering/lab.sqlite3 --json` can mechanically verify the published showcase bundle
 - [ ] reports clearly distinguish validated champions, failures, memory citations, and repeated-dead-end metrics
 - [ ] cleanup can safely prune discardable artifacts
 - [ ] GPU smoke passes on the target machine

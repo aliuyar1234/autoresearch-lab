@@ -44,7 +44,7 @@ def run_night_session(
             "ok": False,
             "campaign_id": campaign["campaign_id"],
             "status": "preflight_failed",
-            "continuation_hint": f"Run `python -m lab.cli preflight --campaign {campaign['campaign_id']}` and fix the reported env/config issues before retrying night.",
+            "continuation_hint": f"Run `arlab preflight --campaign {campaign['campaign_id']}` and fix the reported env/config issues before retrying night.",
             "preflight": preflight.to_dict(),
             "resume": resume_payload,
         }
@@ -208,11 +208,11 @@ def _generate_final_report(
 def _continuation_hint(*, campaign_id: str, status: str, resume_payload: dict[str, Any], run_count: int) -> str:
     if status == "interrupted":
         return (
-            f"Rerun `python -m lab.cli night --campaign {campaign_id} ...`; the session auto-resumes proposals left in `running` state first."
+            f"Rerun `arlab night --campaign {campaign_id} ...`; the session auto-resumes proposals left in `running` state first."
         )
     if status == "idle":
         if resume_payload.get("status") == "recovered":
-            return f"Rerun `python -m lab.cli night --campaign {campaign_id} ...` to execute the requeued proposals recovered at session start."
+            return f"Rerun `arlab night --campaign {campaign_id} ...` to execute the requeued proposals recovered at session start."
         return f"No queued work remained for {campaign_id}; generate new proposals or rerun night later."
     if resume_payload.get("status") == "recovered" and run_count > 0:
         return f"Recovered interrupted work first and finished the session; rerun `night` later to continue exploring {campaign_id}."

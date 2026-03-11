@@ -1,7 +1,7 @@
 [project]
 name = "autoresearch-lab"
 version = "0.1.0"
-description = "Single-GPU CUDA-first dense-model research lab with campaigns, validation, evidence memory, autotune, and showcase automation"
+description = "Single-GPU CUDA-first dense-model research lab with campaigns, validation, evidence-traced memory, autotune, and showcase automation"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -15,6 +15,17 @@ dependencies = [
     "triton-windows==3.5.1.post22; platform_system == 'Windows'",
 ]
 
+[project.scripts]
+arlab = "lab.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+]
+
+[tool.uv]
+package = true
+
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cu128" },
@@ -24,3 +35,27 @@ torch = [
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gpu: requires a CUDA-capable NVIDIA GPU",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["lab*", "research*"]
+exclude = [
+    "artifacts*",
+    "campaigns*",
+    "docs*",
+    "schemas*",
+    "showcase*",
+    "sql*",
+    "templates*",
+    "tests*",
+]
+namespaces = true

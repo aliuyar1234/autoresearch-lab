@@ -53,11 +53,19 @@ python showcase/the-remembering-scientist/run_validations.py --campaign base_2k 
 python showcase/the-remembering-scientist/render_case_study.py --campaign base_2k --output-root showcase/the-remembering-scientist
 ```
 
+5. Verify that the published bundle still matches stored rows and artifact paths:
+
+```bash
+python tools/verify_showcase_bundle.py --showcase-root showcase/the-remembering-scientist --db-path showcase/the-remembering-scientist/pair_01/remembering/lab.sqlite3 --json
+```
+
+The verifier checks that cited proposal, experiment, retrieval, memory, and validation-review ids still exist in SQLite, that referenced files still exist on disk, and that confirm/replay claims are backed by ledger state.
+
 If you need a non-default trainer entrypoint, pass `--target-command` or `--target-command-json` to `run_ab_test.py` and `run_validations.py`.
 
 ## Exact Artifact Paths
 
-The reproducible public story lives under [showcase/the-remembering-scientist](/E:/autoresearch_lab_codex_spec_pack_patched_v1_1/autoresearch_repo/showcase/the-remembering-scientist):
+The reproducible public story lives under [`showcase/the-remembering-scientist`](showcase/the-remembering-scientist):
 
 - `01_seed_snapshot/MANIFEST.json`
 - `01_seed_snapshot/ARTIFACT_REFERENCES.json`
@@ -108,6 +116,8 @@ If you want to inspect the public story from raw data upward, start with:
 2. `validations/validation_summary.json`
 3. each arm's `report.json`
 4. the candidate proposals referenced by the finalists
+
+If you want a single mechanical trust check before reading the narrative, run `tools/verify_showcase_bundle.py` first.
 
 ## Honest Current Claim
 

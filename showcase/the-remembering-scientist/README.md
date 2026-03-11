@@ -38,6 +38,14 @@ python showcase/the-remembering-scientist/run_validations.py --campaign base_2k 
 python showcase/the-remembering-scientist/render_case_study.py --campaign base_2k --output-root showcase/the-remembering-scientist
 ```
 
+5. Verify the generated bundle:
+
+```bash
+python tools/verify_showcase_bundle.py --showcase-root showcase/the-remembering-scientist --db-path showcase/the-remembering-scientist/pair_01/remembering/lab.sqlite3 --json
+```
+
+This checks that cited rows still exist in SQLite, referenced files still exist on disk, and replay / validation claims are still backed by the stored bundle.
+
 ## Output Shape
 
 - `compare.json` and `compare.md`: official A/B pair summaries
@@ -71,6 +79,8 @@ Use these files when checking the public claim:
 2. `validations/validation_summary.json`
 3. the finalist arm reports
 4. the finalist proposals
+
+Run `tools/verify_showcase_bundle.py` before publishing or citing the bundle as evidence.
 
 ## What Is Historical
 

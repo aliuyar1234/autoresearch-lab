@@ -52,6 +52,15 @@ class CliHelpTests(unittest.TestCase):
             check=False,
         )
 
+    def _run_arlab(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["uv", "run", "arlab", *args],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def test_help_commands_work(self) -> None:
         result = self._run_cli("--help")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -70,6 +79,30 @@ class CliHelpTests(unittest.TestCase):
         subcommand = self._run_cli("bootstrap", "--help")
         self.assertEqual(subcommand.returncode, 0, subcommand.stderr)
         self.assertIn("--repo-root", subcommand.stdout)
+
+    def test_arlab_entrypoint_help_works(self) -> None:
+        result = self._run_arlab("--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("usage: arlab", result.stdout)
+        self.assertIn("Autoresearch Lab: a local, single-GPU, CUDA-first, dense-model research lab.", result.stdout)
+
+    def test_parse_time_validation_handles_required_flags_and_mutex(self) -> None:
+        campaign_show = self._run_cli("campaign", "show")
+        self.assertEqual(campaign_show.returncode, 2)
+        self.assertIn("--campaign", campaign_show.stderr)
+
+        report = self._run_cli("report")
+        self.assertEqual(report.returncode, 2)
+        self.assertIn("--campaign", report.stderr)
+
+        autotune = self._run_cli("autotune", "--campaign", "base_2k")
+        self.assertEqual(autotune.returncode, 2)
+        self.assertIn("--lane", autotune.stderr)
+        self.assertIn("--all-lanes", autotune.stderr)
+
+        cleanup = self._run_cli("cleanup", "--apply", "--dry-run")
+        self.assertEqual(cleanup.returncode, 2)
+        self.assertIn("--dry-run", cleanup.stderr)
 
     def test_preflight_json_is_machine_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

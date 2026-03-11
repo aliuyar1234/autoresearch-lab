@@ -476,8 +476,6 @@ def _cmd_campaign_list(args: argparse.Namespace) -> int:
 
 
 def _cmd_campaign_show(args: argparse.Namespace) -> int:
-    if not args.campaign:
-        raise SettingsError("campaign show requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     payload = load_campaign(paths, args.campaign)
@@ -486,8 +484,6 @@ def _cmd_campaign_show(args: argparse.Namespace) -> int:
 
 
 def _cmd_campaign_build(args: argparse.Namespace) -> int:
-    if not args.campaign:
-        raise SettingsError("campaign build requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     payload = build_campaign(paths, args.campaign, source_dir=getattr(args, "source_dir", None))
@@ -496,8 +492,6 @@ def _cmd_campaign_build(args: argparse.Namespace) -> int:
 
 
 def _cmd_campaign_verify(args: argparse.Namespace) -> int:
-    if not args.campaign:
-        raise SettingsError("campaign verify requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     payload = verify_campaign(paths, args.campaign)
@@ -511,8 +505,6 @@ def _cmd_campaign_verify(args: argparse.Namespace) -> int:
 
 
 def _cmd_campaign_queue(args: argparse.Namespace) -> int:
-    if not args.campaign:
-        raise SettingsError("campaign queue requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     apply_migrations(paths.db_path, paths.sql_root)
@@ -740,10 +732,6 @@ def _default_run_purpose(proposal: dict[str, object], *, is_replay: bool) -> str
 
 
 def _cmd_autotune(args: argparse.Namespace) -> int:
-    if not getattr(args, "campaign", None):
-        raise SettingsError("autotune requires --campaign")
-    if not getattr(args, "all_lanes", False) and not getattr(args, "lane", None):
-        raise SettingsError("autotune requires --lane or --all-lanes")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     ensure_managed_roots(paths)
@@ -957,8 +945,6 @@ def _cmd_import_code_proposal(args: argparse.Namespace) -> int:
 
 
 def _cmd_report(args: argparse.Namespace) -> int:
-    if not getattr(args, "campaign", None):
-        raise SettingsError("report requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     apply_migrations(paths.db_path, paths.sql_root)
@@ -989,8 +975,6 @@ def _cmd_report(args: argparse.Namespace) -> int:
 
 
 def _cmd_memory_backfill(args: argparse.Namespace) -> int:
-    if not getattr(args, "campaign", None):
-        raise SettingsError("memory backfill requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     apply_migrations(paths.db_path, paths.sql_root)
@@ -1022,8 +1006,6 @@ def _cmd_memory_backfill(args: argparse.Namespace) -> int:
 
 
 def _cmd_memory_inspect(args: argparse.Namespace) -> int:
-    if not getattr(args, "campaign", None):
-        raise SettingsError("memory inspect requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     apply_migrations(paths.db_path, paths.sql_root)
@@ -1092,8 +1074,6 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 
 def _cmd_noise(args: argparse.Namespace) -> int:
-    if not getattr(args, "campaign", None):
-        raise SettingsError("noise requires --campaign")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     apply_migrations(paths.db_path, paths.sql_root)
@@ -1115,8 +1095,6 @@ def _cmd_noise(args: argparse.Namespace) -> int:
 
 
 def _cmd_cleanup(args: argparse.Namespace) -> int:
-    if bool(getattr(args, "apply", False)) and bool(getattr(args, "dry_run", False)):
-        raise SettingsError("cleanup accepts either --apply or --dry-run, not both")
     settings = _load_settings_from_args(args)
     paths = build_paths(settings)
     apply_migrations(paths.db_path, paths.sql_root)
@@ -1157,8 +1135,6 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def _cmd_night(args: argparse.Namespace) -> int:
-    if not getattr(args, "campaign", None):
-        raise SettingsError("night requires --campaign")
     if float(getattr(args, "hours", 8.0)) <= 0 and getattr(args, "max_runs", None) is None:
         raise SettingsError("night requires positive --hours or --max-runs")
     settings = _load_settings_from_args(args)
@@ -1460,12 +1436,19 @@ def _run_tiny_gpu_smoke(paths, campaign_id: str, result) -> dict[str, object]:
     return payload
 
 
+def _prog_name() -> str:
+    executable = Path(sys.argv[0]).name.lower()
+    if "arlab" in executable:
+        return "arlab"
+    return "python -m lab.cli"
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = _build_common_parser()
     nested_common = _build_common_parser(suppress_defaults=True)
 
     parser = argparse.ArgumentParser(
-        prog="python -m lab.cli",
+        prog=_prog_name(),
         description="Autoresearch Lab: a local, single-GPU, CUDA-first, dense-model research lab.",
         epilog="Common path: bootstrap -> preflight -> campaign build -> run -> night -> report -> doctor -> cleanup",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1485,12 +1468,12 @@ def build_parser() -> argparse.ArgumentParser:
     campaign_subparsers = campaign.add_subparsers(dest="campaign_command", required=True)
 
     campaign_build = campaign_subparsers.add_parser("build", parents=[nested_common], help="build campaign assets")
-    campaign_build.add_argument("--campaign")
+    campaign_build.add_argument("--campaign", required=True)
     campaign_build.add_argument("--source-dir", type=Path)
     campaign_build.set_defaults(handler=_cmd_campaign_build)
 
     campaign_queue = campaign_subparsers.add_parser("queue", parents=[nested_common], help="[advanced] preview or apply structured queue fill")
-    campaign_queue.add_argument("--campaign")
+    campaign_queue.add_argument("--campaign", required=True)
     campaign_queue.add_argument("--count", type=int, default=5)
     campaign_queue.add_argument("--lane", choices=["scout", "main", "confirm"])
     campaign_queue.add_argument("--family", choices=GENERATABLE_FAMILIES)
@@ -1498,11 +1481,11 @@ def build_parser() -> argparse.ArgumentParser:
     campaign_queue.set_defaults(handler=_cmd_campaign_queue)
 
     campaign_show = campaign_subparsers.add_parser("show", parents=[nested_common], help="[advanced] show one campaign manifest")
-    campaign_show.add_argument("--campaign")
+    campaign_show.add_argument("--campaign", required=True)
     campaign_show.set_defaults(handler=_cmd_campaign_show)
 
     campaign_verify = campaign_subparsers.add_parser("verify", parents=[nested_common], help="[advanced] verify campaign assets")
-    campaign_verify.add_argument("--campaign")
+    campaign_verify.add_argument("--campaign", required=True)
     campaign_verify.set_defaults(handler=_cmd_campaign_verify)
 
     campaign_list = campaign_subparsers.add_parser("list", parents=[nested_common], help="[advanced] list campaigns")
@@ -1526,7 +1509,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.set_defaults(handler=_cmd_run)
 
     night_parser = subparsers.add_parser("night", parents=[common], help="run an unattended night session")
-    night_parser.add_argument("--campaign")
+    night_parser.add_argument("--campaign", required=True)
     night_parser.add_argument("--hours", type=float, default=8.0)
     night_parser.add_argument("--max-runs", type=int)
     night_parser.add_argument("--allow-confirm", action="store_true")
@@ -1538,7 +1521,7 @@ def build_parser() -> argparse.ArgumentParser:
     night_parser.set_defaults(handler=_cmd_night)
 
     report_parser = subparsers.add_parser("report", parents=[common], help="generate reports")
-    report_parser.add_argument("--campaign")
+    report_parser.add_argument("--campaign", required=True)
     report_parser.add_argument("--date")
     report_parser.add_argument("--from", dest="from_timestamp")
     report_parser.add_argument("--to", dest="to_timestamp")
@@ -1550,8 +1533,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     cleanup_parser = subparsers.add_parser("cleanup", parents=[common], help="[maintenance] remove discardable artifacts")
     cleanup_parser.add_argument("--campaign")
-    cleanup_parser.add_argument("--dry-run", action="store_true")
-    cleanup_parser.add_argument("--apply", action="store_true")
+    cleanup_mode = cleanup_parser.add_mutually_exclusive_group()
+    cleanup_mode.add_argument("--dry-run", action="store_true")
+    cleanup_mode.add_argument("--apply", action="store_true")
     cleanup_parser.set_defaults(handler=_cmd_cleanup)
 
     inspect_parser = subparsers.add_parser("inspect", parents=[common], help="[advanced] inspect campaigns, proposals, or experiments")
@@ -1603,9 +1587,10 @@ def build_parser() -> argparse.ArgumentParser:
     noise_parser.set_defaults(handler=_cmd_noise)
 
     autotune_parser = subparsers.add_parser("autotune", parents=[common], help="[advanced] probe and cache runtime-only tuning overlays")
-    autotune_parser.add_argument("--campaign")
-    autotune_parser.add_argument("--lane", choices=["scout", "main", "confirm"])
-    autotune_parser.add_argument("--all-lanes", action="store_true")
+    autotune_parser.add_argument("--campaign", required=True)
+    autotune_scope = autotune_parser.add_mutually_exclusive_group(required=True)
+    autotune_scope.add_argument("--lane", choices=["scout", "main", "confirm"])
+    autotune_scope.add_argument("--all-lanes", action="store_true")
     autotune_parser.add_argument("--backend")
     autotune_parser.add_argument("--device-profile")
     autotune_parser.add_argument("--force", action="store_true")

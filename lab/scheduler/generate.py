@@ -9,7 +9,7 @@ from research.dense_gpt.fingerprint import short_fingerprint, stable_fingerprint
 from research.dense_gpt.mutation_rules import apply_path_override
 from research.dense_gpt.search_space import estimate_complexity_cost, resolve_dense_config, search_knobs_for_campaign, validate_dense_config
 
-from ..ledger.queries import list_campaign_experiments, list_campaign_proposals, list_memory_records, upsert_proposal
+from ..ledger.queries import list_campaign_experiments, list_campaign_proposals, list_memory_records, upsert_campaign, upsert_proposal
 from ..memory import persist_proposal_memory_state, retrieve_memory_context
 from ..paths import LabPaths
 from ..proposals import normalize_proposal_payload
@@ -98,6 +98,7 @@ def generate_structured_proposal_from_state(
             _persist_generated_proposal(paths, selected)
             if connection is not None:
                 public_payload = _finalize_generated_payload(selected)
+                upsert_campaign(connection, campaign, timestamp=public_payload["created_at"])
                 upsert_proposal(connection, public_payload, updated_at=public_payload["created_at"])
                 persist_proposal_memory_state(connection, paths=paths, proposal=selected)
                 connection.commit()
@@ -147,6 +148,7 @@ def plan_structured_queue(
     if persist:
         for proposal in ranked:
             _persist_generated_proposal(paths, proposal)
+            upsert_campaign(connection, campaign, timestamp=proposal["created_at"])
             upsert_proposal(connection, proposal, updated_at=proposal["created_at"])
             persist_proposal_memory_state(connection, paths=paths, proposal=proposal)
         connection.commit()

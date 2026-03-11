@@ -42,60 +42,64 @@ Requirements:
 - [`uv`](https://docs.astral.sh/uv/)
 
 ```bash
-uv sync
-python -m lab.cli bootstrap
-python -m lab.cli preflight
-python -m lab.cli campaign build --campaign base_2k
-python -m lab.cli run --campaign base_2k --generate structured --lane scout
-python -m lab.cli night --campaign base_2k --hours 8 --allow-confirm
-python -m lab.cli report --campaign base_2k
-python -m lab.cli doctor
-python -m lab.cli cleanup --dry-run
+uv sync --group dev
+uv run arlab bootstrap
+uv run arlab preflight
+uv run arlab campaign build --campaign base_2k
+uv run arlab run --campaign base_2k --generate structured --lane scout
+uv run arlab night --campaign base_2k --hours 8 --allow-confirm
+uv run arlab report
+uv run arlab doctor
+uv run arlab cleanup --dry-run
 ```
 
 If a run looks promising, validate it before treating it as a champion:
 
 ```bash
-python -m lab.cli validate --experiment <experiment_id> --mode confirm
-python -m lab.cli validate --experiment <experiment_id> --mode audit
+uv run arlab validate --experiment <experiment_id> --mode confirm
+uv run arlab validate --experiment <experiment_id> --mode audit
 ```
 
 ## Main Commands
 
 Common path:
 
-- `python -m lab.cli bootstrap`
-- `python -m lab.cli preflight`
-- `python -m lab.cli campaign build`
-- `python -m lab.cli run`
-- `python -m lab.cli night`
-- `python -m lab.cli report`
-- `python -m lab.cli doctor`
-- `python -m lab.cli cleanup --dry-run`
+- `uv run arlab bootstrap`
+- `uv run arlab preflight`
+- `uv run arlab campaign build`
+- `uv run arlab run`
+- `uv run arlab night`
+- `uv run arlab report`
+- `uv run arlab doctor`
+- `uv run arlab cleanup --dry-run`
 
 Advanced:
 
-- `python -m lab.cli inspect`
-- `python -m lab.cli replay`
-- `python -m lab.cli score`
-- `python -m lab.cli validate`
-- `python -m lab.cli noise`
-- `python -m lab.cli autotune`
-- `python -m lab.cli campaign queue`
-- `python -m lab.cli campaign show`
-- `python -m lab.cli campaign verify`
-- `python -m lab.cli memory backfill`
-- `python -m lab.cli memory inspect`
-- `python -m lab.cli smoke --gpu`
+- `uv run arlab inspect`
+- `uv run arlab replay`
+- `uv run arlab score`
+- `uv run arlab validate`
+- `uv run arlab noise`
+- `uv run arlab autotune`
+- `uv run arlab campaign queue`
+- `uv run arlab campaign show`
+- `uv run arlab campaign verify`
+- `uv run arlab memory backfill`
+- `uv run arlab memory inspect`
+- `uv run arlab smoke --gpu`
+
+Fallback:
+
+- `uv run python -m lab.cli ...` remains supported when you explicitly want module invocation.
 
 ## Code Lane
 
 When structured search is not enough:
 
 ```bash
-python -m lab.cli export-code-proposal --proposal-id <proposal_id>
-python -m lab.cli import-code-proposal --proposal-id <proposal_id> --patch-path path\to\returned.patch
-python -m lab.cli run --proposal-id <proposal_id>
+uv run arlab export-code-proposal --proposal-id <proposal_id>
+uv run arlab import-code-proposal --proposal-id <proposal_id> --patch-path path\to\returned.patch
+uv run arlab run --proposal-id <proposal_id>
 ```
 
 The exported pack includes:
@@ -124,6 +128,7 @@ Start here:
 
 - [SHOWCASE.md](SHOWCASE.md)
 - [showcase/the-remembering-scientist/README.md](showcase/the-remembering-scientist/README.md)
+- `python tools/verify_showcase_bundle.py --showcase-root showcase/the-remembering-scientist --db-path showcase/the-remembering-scientist/pair_01/remembering/lab.sqlite3 --json`
 
 Historical notes live under `docs/archive/` and `showcase/the-remembering-scientist/archive/`.
 
@@ -137,6 +142,8 @@ uv run train.py
 ```
 
 That is useful for sanity checks and baseline parity work.
+
+Archived upstream materials live under `docs/archive/upstream-baseline/`.
 
 ## Docs
 

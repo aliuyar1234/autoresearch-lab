@@ -53,6 +53,20 @@ def _assert_envelope(test_case: unittest.TestCase, payload: dict[str, object], c
 
 
 class CliOutputContractTests(unittest.TestCase):
+    def test_report_json_envelope_after_bootstrap_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+
+            bootstrap = run_cli("bootstrap", temp_root, "--json")
+            self.assertEqual(bootstrap.returncode, 0, bootstrap.stderr)
+
+            report = run_cli("report", temp_root, "--campaign", "base_2k", "--json")
+            self.assertEqual(report.returncode, 0, report.stderr)
+            report_payload = json.loads(report.stdout)
+            _assert_envelope(self, report_payload, "report")
+            self.assertEqual(report_payload["run_count"], 0)
+            self.assertEqual(report_payload["promoted_count"], 0)
+
     def test_common_path_json_envelope(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir)

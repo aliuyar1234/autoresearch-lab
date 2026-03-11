@@ -71,6 +71,7 @@ python tools/ten_of_ten_signoff.py --json
 
 - [ ] the remembering-scientist pipeline can be run from code
 - [ ] compare, validation, replay, and figure-input artifacts are generated from stored state
+- [ ] `tools/verify_showcase_bundle.py` can mechanically verify the published bundle
 - [ ] public showcase text does not depend on hand-assembled numbers
 
 ### 10. The repo can defend its claims
@@ -87,6 +88,7 @@ The signoff is strongest when you can point to:
 - `docs/product-specs/acceptance-matrix.md`
 - `docs/runbook.md`
 - `showcase/the-remembering-scientist/README.md`
+- `python tools/verify_showcase_bundle.py --showcase-root showcase/the-remembering-scientist --db-path showcase/the-remembering-scientist/pair_01/remembering/lab.sqlite3 --json`
 - report JSON/Markdown under `artifacts/reports/`
 - validation reviews in SQLite
 - a green run of `python tools/ten_of_ten_signoff.py --json`

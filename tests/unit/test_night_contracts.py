@@ -13,7 +13,7 @@ class NightContractsTests(unittest.TestCase):
             resume_payload={"status": "recovered"},
             run_count=1,
         )
-        self.assertIn("python -m lab.cli night --campaign base_2k", hint)
+        self.assertIn("arlab night --campaign base_2k", hint)
         self.assertIn("auto-resumes", hint)
 
 

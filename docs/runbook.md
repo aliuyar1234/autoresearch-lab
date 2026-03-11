@@ -7,11 +7,11 @@ This runbook is the operator guide for Autoresearch Lab as it exists now.
 ```bash
 git clone https://github.com/aliuyar1234/autoresearch-lab.git
 cd autoresearch-lab
-uv sync
-python -m lab.cli bootstrap
-python -m lab.cli preflight --campaign base_2k --benchmark-backends
-python -m lab.cli smoke --gpu
-python -m lab.cli doctor
+uv sync --group dev
+uv run arlab bootstrap
+uv run arlab preflight --campaign base_2k --benchmark-backends
+uv run arlab smoke --gpu
+uv run arlab doctor
 ```
 
 Expected outcome:
@@ -40,10 +40,10 @@ Migration behavior:
 ## 3. Build campaign assets
 
 ```bash
-python -m lab.cli campaign list
-python -m lab.cli campaign show --campaign base_2k
-python -m lab.cli campaign build --campaign base_2k
-python -m lab.cli campaign verify --campaign base_2k
+uv run arlab campaign list
+uv run arlab campaign show --campaign base_2k
+uv run arlab campaign build --campaign base_2k
+uv run arlab campaign verify --campaign base_2k
 ```
 
 Expected outputs:
@@ -57,7 +57,7 @@ Expected outputs:
 ## 4. Warm runtime autotune
 
 ```bash
-python -m lab.cli autotune --campaign base_2k --all-lanes
+uv run arlab autotune --campaign base_2k --all-lanes
 ```
 
 What it does:
@@ -69,9 +69,9 @@ What it does:
 ## 5. Run one structured experiment
 
 ```bash
-python -m lab.cli run --campaign base_2k --generate structured --lane scout
-python -m lab.cli inspect --experiment <experiment_id>
-python -m lab.cli score --experiment <experiment_id>
+uv run arlab run --campaign base_2k --generate structured --lane scout
+uv run arlab inspect --experiment <experiment_id>
+uv run arlab score --experiment <experiment_id>
 ```
 
 Look for:
@@ -88,8 +88,8 @@ Look for:
 Strong search results are not automatically champions.
 
 ```bash
-python -m lab.cli validate --experiment <experiment_id> --mode confirm
-python -m lab.cli validate --experiment <experiment_id> --mode audit
+uv run arlab validate --experiment <experiment_id> --mode confirm
+uv run arlab validate --experiment <experiment_id> --mode audit
 ```
 
 Look for:
@@ -102,15 +102,15 @@ Look for:
 To estimate baseline noise:
 
 ```bash
-python -m lab.cli noise --campaign base_2k --lane scout --count 5
+uv run arlab noise --campaign base_2k --lane scout --count 5
 ```
 
 ## 7. Run a bounded overnight session
 
 ```bash
-python -m lab.cli night --campaign base_2k --hours 8 --allow-confirm
-python -m lab.cli report --campaign base_2k
-python -m lab.cli inspect --campaign base_2k
+uv run arlab night --campaign base_2k --hours 8 --allow-confirm
+uv run arlab report --campaign base_2k
+uv run arlab inspect --campaign base_2k
 ```
 
 Expected outputs:
@@ -132,8 +132,8 @@ The report should surface:
 ## 8. Inspect or backfill memory
 
 ```bash
-python -m lab.cli memory inspect --campaign base_2k --limit 20
-python -m lab.cli memory backfill --campaign base_2k
+uv run arlab memory inspect --campaign base_2k --limit 20
+uv run arlab memory backfill --campaign base_2k
 ```
 
 Use these when:
@@ -146,9 +146,9 @@ Use these when:
 Use this only when structured search is not enough.
 
 ```bash
-python -m lab.cli export-code-proposal --proposal-id <proposal_id>
-python -m lab.cli import-code-proposal --proposal-id <proposal_id> --patch-path path\\to\\returned.patch
-python -m lab.cli run --proposal-id <proposal_id>
+uv run arlab export-code-proposal --proposal-id <proposal_id>
+uv run arlab import-code-proposal --proposal-id <proposal_id> --patch-path path\\to\\returned.patch
+uv run arlab run --proposal-id <proposal_id>
 ```
 
 The exported pack should include:
@@ -195,13 +195,13 @@ Expected outputs:
 Always start with dry-run:
 
 ```bash
-python -m lab.cli cleanup --dry-run
+uv run arlab cleanup --dry-run
 ```
 
 Then apply if the plan looks safe:
 
 ```bash
-python -m lab.cli cleanup --apply
+uv run arlab cleanup --apply
 ```
 
 The cleanup command must never delete:
@@ -216,8 +216,8 @@ The cleanup command must never delete:
 For interruption recovery:
 
 ```bash
-python -m lab.cli doctor --json
-python -m lab.cli night --campaign base_2k --hours 8 --allow-confirm
+uv run arlab doctor --json
+uv run arlab night --campaign base_2k --hours 8 --allow-confirm
 ```
 
 Look for:
@@ -246,6 +246,10 @@ The human-facing rubric lives in:
 
 - `docs/product-specs/acceptance-matrix.md`
 - `docs/product-specs/ten-of-ten-signoff.md`
+
+Fallback:
+
+- `uv run python -m lab.cli ...` remains supported when you explicitly want module invocation.
 
 ## 13. Merge readiness checklist
 
