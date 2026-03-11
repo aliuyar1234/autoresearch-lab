@@ -66,6 +66,8 @@ class CliOutputContractTests(unittest.TestCase):
             _assert_envelope(self, report_payload, "report")
             self.assertEqual(report_payload["run_count"], 0)
             self.assertEqual(report_payload["promoted_count"], 0)
+            self.assertIn("lane_comparison", report_payload)
+            self.assertIn("memory_policy_summary", report_payload)
 
     def test_common_path_json_envelope(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -208,6 +210,11 @@ class NightOutputContractTests(unittest.TestCase):
             self.assertIn("report_path", payload)
             self.assertIn("promoted_count", payload)
             self.assertIn("failed_count", payload)
+            self.assertIn("session_id", payload)
+            self.assertIn("session_manifest_path", payload)
+            self.assertTrue(Path(payload["session_manifest_path"]).exists())
+            self.assertIn("session", payload)
+            self.assertIn("lane_comparison", payload)
 
 
 if __name__ == "__main__":

@@ -92,6 +92,7 @@ The signoff is strongest when you can point to:
 - `docs/product-specs/acceptance-matrix.md`
 - `docs/OPERATING_CONTRACT.md`
 - `docs/RESEARCH_CONTRACT.md`
+- `docs/AGENT_SESSION_CONTRACT.md`
 - `docs/runbook.md`
 - `showcase/the-remembering-scientist/README.md`
 - `uv run python tools/parity_harness.py --json`

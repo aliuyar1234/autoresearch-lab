@@ -79,6 +79,8 @@ class NightSessionFakeTests(unittest.TestCase):
                 "0.01",
                 "--max-runs",
                 "2",
+                "--self-review-every-runs",
+                "1",
                 "--target-command-json",
                 _phase6_target_command(),
                 "--json",
@@ -87,6 +89,10 @@ class NightSessionFakeTests(unittest.TestCase):
             payload = json.loads(night.stdout)
             self.assertTrue(payload["ok"])
             self.assertGreaterEqual(payload["run_count"], 1)
+            self.assertTrue(payload["session_id"])
+            self.assertTrue(Path(payload["session_manifest_path"]).exists())
+            self.assertIn("session", payload)
+            self.assertGreaterEqual(int(payload["session"]["report_checkpoint_count"]), 1)
             self.assertIn("continuation_hint", payload)
             self.assertIn("base_2k", payload["continuation_hint"])
             self.assertTrue(Path(payload["report"]["artifact_paths"]["report_json"]).exists())
@@ -96,6 +102,13 @@ class NightSessionFakeTests(unittest.TestCase):
             inspect_payload = json.loads(inspect.stdout)
             self.assertIn("latest_report", inspect_payload)
             self.assertTrue(inspect_payload["latest_report"]["report_json_path"])
+            self.assertTrue(inspect_payload["recent_sessions"])
+
+            inspect_session = run_cli("inspect", temp_root, "--session", payload["session_id"], "--json")
+            self.assertEqual(inspect_session.returncode, 0, inspect_session.stderr)
+            inspect_session_payload = json.loads(inspect_session.stdout)
+            self.assertEqual(inspect_session_payload["kind"], "session")
+            self.assertTrue(inspect_session_payload["events"])
 
 
 if __name__ == "__main__":

@@ -6,6 +6,8 @@ Autoresearch Lab is Andrej Karpathy's [`autoresearch`](https://github.com/karpat
 
 It keeps the original "run real training loops overnight" spirit, but adds the machinery a serious one-workstation lab needs: campaigns, SQLite state, explicit evaluation splits, validation reviews, reports, recovery tooling, and reproducible proof paths.
 
+The repo is also now agent-first in one important way: `night` sessions are first-class machine-readable autonomy units with budgets, checkpoints, retrospectives, and reviewed scheduler-policy hooks.
+
 The repo's structure is intentional:
 
 - the upstream baseline path stays alive as a truth anchor
@@ -55,6 +57,14 @@ uv run arlab validate --experiment <experiment_id> --mode audit
 
 `base_2k` is the canonical campaign and `arlab` is the public front door.
 
+If you want an explicitly agent-budgeted session instead of the plain endurance path:
+
+```bash
+uv run arlab night --campaign base_2k --hours 8 --allow-confirm --max-runs 12 --max-structured-runs 10 --max-code-runs 2 --self-review-every-runs 3
+```
+
+That session will leave a session manifest, checkpoints, and a retrospective under `artifacts/reports/_sessions/...`.
+
 ## Core Lab Capabilities
 
 - multi-file SQL migrations
@@ -65,6 +75,7 @@ uv run arlab validate --experiment <experiment_id> --mode audit
 - archive-aware scheduler with repeated-dead-end tracking
 - runtime-only autotune overlays
 - unattended `night` sessions with morning reports
+- first-class agent sessions with checkpoints and retrospectives
 - full reports, doctoring, and cleanup
 
 ## Secondary Paths
@@ -116,6 +127,7 @@ Read these first:
 - `ARCHITECTURE.md`
 - `docs/OPERATING_CONTRACT.md`
 - `docs/RESEARCH_CONTRACT.md`
+- `docs/AGENT_SESSION_CONTRACT.md`
 - `docs/runbook.md`
 - `docs/RELIABILITY.md`
 - `docs/SECURITY.md`

@@ -278,6 +278,7 @@ The human-facing rubric lives in:
 
 - `docs/OPERATING_CONTRACT.md`
 - `docs/RESEARCH_CONTRACT.md`
+- `docs/AGENT_SESSION_CONTRACT.md`
 - `docs/product-specs/acceptance-matrix.md`
 - `docs/product-specs/ten-of-ten-signoff.md`
 
@@ -290,7 +291,7 @@ Fallback:
 Before calling the lab "done enough to defend":
 
 - baseline parity path still exists for `base_2k`
-- `docs/OPERATING_CONTRACT.md` and `docs/RESEARCH_CONTRACT.md` still match the live repo
+- `docs/OPERATING_CONTRACT.md`, `docs/RESEARCH_CONTRACT.md`, and `docs/AGENT_SESSION_CONTRACT.md` still match the live repo
 - fake and integration tests pass
 - GPU smoke passes on the target machine
 - validated champions are distinguishable from raw search wins

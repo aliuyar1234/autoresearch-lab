@@ -688,6 +688,148 @@ def get_latest_daily_report(connection, campaign_id: str) -> dict[str, Any] | No
     return rows[0] if rows else None
 
 
+def upsert_agent_session(connection, payload: dict[str, Any]) -> None:
+    connection.execute(
+        """
+        INSERT INTO agent_sessions (
+            session_id, campaign_id, status, operator_mode, started_at, ended_at,
+            hours_budget, max_runs_budget, max_structured_runs_budget, max_code_runs_budget,
+            allow_confirm, seed_policy, backend, device_profile, queue_refills, run_count,
+            structured_run_count, code_run_count, confirm_run_count, validation_review_count,
+            report_checkpoint_count, self_review_count, lane_switch_count, last_lane, stop_reason,
+            session_manifest_path, retrospective_json_path, report_json_path, session_summary_json,
+            created_at, updated_at
+        ) VALUES (
+            :session_id, :campaign_id, :status, :operator_mode, :started_at, :ended_at,
+            :hours_budget, :max_runs_budget, :max_structured_runs_budget, :max_code_runs_budget,
+            :allow_confirm, :seed_policy, :backend, :device_profile, :queue_refills, :run_count,
+            :structured_run_count, :code_run_count, :confirm_run_count, :validation_review_count,
+            :report_checkpoint_count, :self_review_count, :lane_switch_count, :last_lane, :stop_reason,
+            :session_manifest_path, :retrospective_json_path, :report_json_path, :session_summary_json,
+            :created_at, :updated_at
+        )
+        ON CONFLICT(session_id) DO UPDATE SET
+            campaign_id=excluded.campaign_id,
+            status=excluded.status,
+            operator_mode=excluded.operator_mode,
+            started_at=excluded.started_at,
+            ended_at=excluded.ended_at,
+            hours_budget=excluded.hours_budget,
+            max_runs_budget=excluded.max_runs_budget,
+            max_structured_runs_budget=excluded.max_structured_runs_budget,
+            max_code_runs_budget=excluded.max_code_runs_budget,
+            allow_confirm=excluded.allow_confirm,
+            seed_policy=excluded.seed_policy,
+            backend=excluded.backend,
+            device_profile=excluded.device_profile,
+            queue_refills=excluded.queue_refills,
+            run_count=excluded.run_count,
+            structured_run_count=excluded.structured_run_count,
+            code_run_count=excluded.code_run_count,
+            confirm_run_count=excluded.confirm_run_count,
+            validation_review_count=excluded.validation_review_count,
+            report_checkpoint_count=excluded.report_checkpoint_count,
+            self_review_count=excluded.self_review_count,
+            lane_switch_count=excluded.lane_switch_count,
+            last_lane=excluded.last_lane,
+            stop_reason=excluded.stop_reason,
+            session_manifest_path=excluded.session_manifest_path,
+            retrospective_json_path=excluded.retrospective_json_path,
+            report_json_path=excluded.report_json_path,
+            session_summary_json=excluded.session_summary_json,
+            updated_at=excluded.updated_at
+        """,
+        {
+            **payload,
+            "allow_confirm": 1 if bool(payload.get("allow_confirm")) else 0,
+            "session_summary_json": json.dumps(payload.get("session_summary", {}), sort_keys=True),
+        },
+    )
+
+
+def append_agent_session_event(
+    connection,
+    *,
+    session_id: str,
+    event_type: str,
+    created_at: str,
+    lane: str | None = None,
+    proposal_id: str | None = None,
+    experiment_id: str | None = None,
+    review_id: str | None = None,
+    report_path: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO agent_session_events (
+            session_id, event_type, lane, proposal_id, experiment_id, review_id,
+            report_path, payload_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            session_id,
+            event_type,
+            lane,
+            proposal_id,
+            experiment_id,
+            review_id,
+            report_path,
+            json.dumps(payload or {}, sort_keys=True),
+            created_at,
+        ),
+    )
+
+
+def get_agent_session(connection, session_id: str) -> dict[str, Any] | None:
+    row = connection.execute("SELECT * FROM agent_sessions WHERE session_id = ?", (session_id,)).fetchone()
+    if row is None:
+        return None
+    return _decode_agent_session_row(dict(row))
+
+
+def list_agent_sessions(connection, campaign_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
+    query = """
+        SELECT *
+        FROM agent_sessions
+        WHERE campaign_id = ?
+        ORDER BY started_at DESC, updated_at DESC, session_id DESC
+    """
+    params: list[Any] = [campaign_id]
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    rows = connection.execute(query, params).fetchall()
+    return [_decode_agent_session_row(dict(row)) for row in rows]
+
+
+def list_agent_session_events(connection, session_id: str) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        """
+        SELECT id, session_id, event_type, lane, proposal_id, experiment_id, review_id, report_path, payload_json, created_at
+        FROM agent_session_events
+        WHERE session_id = ?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (session_id,),
+    ).fetchall()
+    return [
+        {
+            "id": int(row["id"]),
+            "session_id": row["session_id"],
+            "event_type": row["event_type"],
+            "lane": row["lane"],
+            "proposal_id": row["proposal_id"],
+            "experiment_id": row["experiment_id"],
+            "review_id": row["review_id"],
+            "report_path": row["report_path"],
+            "payload": json.loads(row["payload_json"] or "{}"),
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
 def _decode_validation_review_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "review_id": row["review_id"],
@@ -704,6 +846,42 @@ def _decode_validation_review_row(row: dict[str, Any]) -> dict[str, Any]:
         "decision": row["decision"],
         "reason": row["reason"],
         "review": json.loads(row["review_json"] or "{}"),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _decode_agent_session_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "session_id": row["session_id"],
+        "campaign_id": row["campaign_id"],
+        "status": row["status"],
+        "operator_mode": row["operator_mode"],
+        "started_at": row["started_at"],
+        "ended_at": row["ended_at"],
+        "hours_budget": row["hours_budget"],
+        "max_runs_budget": row["max_runs_budget"],
+        "max_structured_runs_budget": row["max_structured_runs_budget"],
+        "max_code_runs_budget": row["max_code_runs_budget"],
+        "allow_confirm": bool(row["allow_confirm"]),
+        "seed_policy": row["seed_policy"],
+        "backend": row["backend"],
+        "device_profile": row["device_profile"],
+        "queue_refills": int(row["queue_refills"]),
+        "run_count": int(row["run_count"]),
+        "structured_run_count": int(row["structured_run_count"]),
+        "code_run_count": int(row["code_run_count"]),
+        "confirm_run_count": int(row["confirm_run_count"]),
+        "validation_review_count": int(row["validation_review_count"]),
+        "report_checkpoint_count": int(row["report_checkpoint_count"]),
+        "self_review_count": int(row["self_review_count"]),
+        "lane_switch_count": int(row["lane_switch_count"]),
+        "last_lane": row["last_lane"],
+        "stop_reason": row["stop_reason"],
+        "session_manifest_path": row["session_manifest_path"],
+        "retrospective_json_path": row["retrospective_json_path"],
+        "report_json_path": row["report_json_path"],
+        "session_summary": json.loads(row["session_summary_json"] or "{}"),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

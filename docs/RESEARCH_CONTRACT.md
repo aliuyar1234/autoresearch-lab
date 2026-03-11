@@ -92,6 +92,7 @@ It should not be described as scientifically superior unless the evidence actual
 
 - runtime autotune overlays
 - code proposal export/import
+- reviewed scheduler-policy files and agent-authored policy suggestions
 - non-canonical campaigns
 - showcase automation
 

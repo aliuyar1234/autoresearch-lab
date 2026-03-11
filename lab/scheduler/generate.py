@@ -15,6 +15,7 @@ from ..paths import LabPaths
 from ..proposals import normalize_proposal_payload
 from ..semantics import is_completed_metric_run, is_pending_validation, is_rankable_experiment, is_validated_promotion
 from ..utils import utc_now_iso, write_json
+from .policy import POLICY_FAMILIES, policy_summary
 from .compose import disjoint_mergeable, make_ablation_override, make_combine_override
 from .exhaustion import compute_idea_signature, is_exhausted_signature, scientific_mutation_paths
 from .novelty import novelty_counter
@@ -34,6 +35,7 @@ def generate_structured_proposal(
     campaign: dict[str, Any],
     lane: str,
     family: str | None = None,
+    scheduler_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     proposals = list_campaign_proposals(connection, str(campaign["campaign_id"]))
     experiments = list_campaign_experiments(connection, str(campaign["campaign_id"]))
@@ -51,6 +53,7 @@ def generate_structured_proposal(
         experiments=experiments,
         memory_records=memory_records,
         family=family,
+        scheduler_policy=scheduler_policy,
         persist=True,
     )
 
@@ -65,10 +68,18 @@ def generate_structured_proposal_from_state(
     experiments: list[dict[str, Any]],
     memory_records: list[dict[str, Any]] | None = None,
     family: str | None = None,
+    scheduler_policy: dict[str, Any] | None = None,
     persist: bool = False,
     finalize: bool = True,
 ) -> dict[str, Any]:
-    attempt_plan = _family_attempt_plan(campaign, lane, proposals, experiments, requested_family=family)
+    attempt_plan = _family_attempt_plan(
+        campaign,
+        lane,
+        proposals,
+        experiments,
+        requested_family=family,
+        scheduler_policy=scheduler_policy,
+    )
     seen_fingerprints = _existing_fingerprints(proposals)
     memory_records = list(memory_records or [])
     for candidate_family, selector_reason in attempt_plan:
@@ -118,6 +129,7 @@ def plan_structured_queue(
     lane: str | None = None,
     family: str | None = None,
     lane_mix: tuple[tuple[str, int], ...] = DEFAULT_LANE_MIX,
+    scheduler_policy: dict[str, Any] | None = None,
     persist: bool = False,
 ) -> list[dict[str, Any]]:
     if count < 1:
@@ -141,6 +153,7 @@ def plan_structured_queue(
             experiments=experiments,
             memory_records=memory_records,
             family=family,
+            scheduler_policy=scheduler_policy,
             persist=False,
             finalize=False,
         )
@@ -165,6 +178,7 @@ def _family_attempt_plan(
     experiments: list[dict[str, Any]],
     *,
     requested_family: str | None,
+    scheduler_policy: dict[str, Any] | None = None,
 ) -> list[tuple[str, str]]:
     if requested_family is not None:
         if requested_family not in FAMILY_CHOICES:
@@ -189,7 +203,45 @@ def _family_attempt_plan(
     for fallback in ("baseline", "ablation", "combine", "exploit", "novel"):
         if fallback not in {name for name, _ in plan}:
             plan.append((fallback, f"fallback family after {chosen} had no viable candidates"))
-    return plan
+    return _apply_scheduler_policy(plan, scheduler_policy)
+
+
+def _apply_scheduler_policy(
+    plan: list[tuple[str, str]],
+    scheduler_policy: dict[str, Any] | None,
+) -> list[tuple[str, str]]:
+    summary = policy_summary(scheduler_policy)
+    if summary is None:
+        return plan
+    blocked = {family for family in summary.get("blocked_families", []) if family in POLICY_FAMILIES}
+    preferred = list(summary.get("preferred_families", []))
+    family_weights = dict(summary.get("family_weights", {}))
+    preferred_index = {family: index for index, family in enumerate(preferred)}
+    weighted: list[tuple[int, int, float, str, str]] = []
+    for family, reason in plan:
+        if family in blocked:
+            continue
+        weighted.append(
+            (
+                0 if family in preferred_index else 1,
+                preferred_index.get(family, len(POLICY_FAMILIES)),
+                -float(family_weights.get(family, 1.0)),
+                family,
+                _policy_reason(reason, summary, family),
+            )
+        )
+    weighted.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+    ordered = [(family, reason) for _, _, _, family, reason in weighted]
+    return ordered or plan
+
+
+def _policy_reason(base_reason: str, summary: dict[str, Any], family: str) -> str:
+    weight = float(summary.get("family_weights", {}).get(family, 1.0))
+    if family in set(summary.get("preferred_families", [])):
+        return f"{base_reason}; reviewed scheduler policy prefers `{family}`"
+    if weight != 1.0:
+        return f"{base_reason}; reviewed scheduler policy weight for `{family}`={weight:.2f}"
+    return base_reason
 
 
 def _generate_family_candidates(

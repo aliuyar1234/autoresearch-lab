@@ -46,7 +46,13 @@ class DbConnectTests(unittest.TestCase):
             self.assertTrue(created)
             self.assertEqual(
                 list_schema_versions(db_path),
-                ["001_ledger", "002_validation_reviews", "003_memory_evidence", "004_scheduler_semantics"],
+                [
+                    "001_ledger",
+                    "002_validation_reviews",
+                    "003_memory_evidence",
+                    "004_scheduler_semantics",
+                    "005_agent_sessions",
+                ],
             )
 
             connection = connect(db_path)

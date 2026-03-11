@@ -29,7 +29,7 @@ The project may be called complete only when all of the following are true:
 - [ ] `uv run arlab validate --experiment <id> --mode confirm` can turn a raw candidate into a validated promotion
 - [ ] `uv run arlab memory inspect --campaign base_2k` shows evidence-bearing memory records
 - [ ] at least one code proposal pack can be exported and imported with evidence context intact
-- [ ] `docs/OPERATING_CONTRACT.md` and `docs/RESEARCH_CONTRACT.md` match the live repo
+- [ ] `docs/OPERATING_CONTRACT.md`, `docs/RESEARCH_CONTRACT.md`, and `docs/AGENT_SESSION_CONTRACT.md` match the live repo
 - [ ] `uv run python tools/parity_harness.py --json` reports the current upstream-vs-lab contract without pretending the paths are identical
 - [ ] `uv run arlab night --campaign base_2k --hours 8 --allow-confirm` remains the official endurance proof path
 - [ ] `python showcase/the-remembering-scientist/run_ab_test.py --campaign base_2k --output-root showcase/the-remembering-scientist --snapshot-root showcase/the-remembering-scientist/01_seed_snapshot --pairs 1 --hours 4 --max-runs 12 --allow-confirm` can generate compare-ready showcase state

@@ -34,6 +34,8 @@ uv run arlab validate --experiment <experiment_id> --mode audit
 
 Everything else is secondary until this path is healthy.
 
+For agent-driven sessions, also treat `docs/AGENT_SESSION_CONTRACT.md` as part of the golden path documentation set.
+
 ## Canonical Campaign
 
 `base_2k` is the canonical campaign.

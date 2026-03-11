@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .ledger.db import apply_migrations, connect, list_schema_versions
-from .ledger.queries import list_artifact_rows, list_daily_reports, list_running_proposals
+from .ledger.queries import list_agent_sessions, list_artifact_rows, list_daily_reports, list_running_proposals
 from .paths import missing_repo_markers
 from .utils.fs import is_within
 
@@ -26,6 +26,7 @@ def run_doctor(paths, *, campaign_id: str | None = None) -> dict[str, Any]:
         findings.extend(_schema_findings(schema_versions=schema_versions, repo_marker_gaps=repo_marker_gaps))
         findings.extend(_missing_artifact_findings(connection, paths=paths, campaign_id=campaign_id))
         findings.extend(_missing_report_findings(connection, campaign_id=campaign_id))
+        findings.extend(_missing_session_findings(connection, campaign_id=campaign_id))
         findings.extend(_running_proposal_findings(connection, campaign_id=campaign_id))
         findings.extend(_worktree_findings(paths.worktrees_root))
     finally:
@@ -215,6 +216,35 @@ def _worktree_findings(worktrees_root: Path) -> list[dict[str, Any]]:
     return findings
 
 
+def _missing_session_findings(connection, *, campaign_id: str | None) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    if campaign_id is None:
+        campaign_rows = connection.execute("SELECT DISTINCT campaign_id FROM agent_sessions ORDER BY campaign_id ASC").fetchall()
+        campaigns = [str(row["campaign_id"]) for row in campaign_rows]
+    else:
+        campaigns = [campaign_id]
+    for session_campaign_id in campaigns:
+        for row in list_agent_sessions(connection, session_campaign_id):
+            for key in ("session_manifest_path", "retrospective_json_path", "report_json_path"):
+                path_value = row.get(key)
+                if not path_value:
+                    continue
+                path = Path(str(path_value))
+                if path.exists():
+                    continue
+                findings.append(
+                    {
+                        "type": "missing_session_artifact",
+                        "severity": "error",
+                        "campaign_id": session_campaign_id,
+                        "session_id": str(row["session_id"]),
+                        "path": str(path),
+                        "message": f"Agent session artifact is missing: {path}",
+                    }
+                )
+    return findings
+
+
 def _annotate_problem_class(finding: dict[str, Any]) -> dict[str, Any]:
     problem_class = _problem_class_for_type(str(finding.get("type") or ""))
     return {
@@ -226,7 +256,7 @@ def _annotate_problem_class(finding: dict[str, Any]) -> dict[str, Any]:
 def _problem_class_for_type(finding_type: str) -> str:
     if finding_type in {"db_integrity", "schema_version_missing"}:
         return "ledger"
-    if finding_type in {"missing_artifact", "missing_report_artifact", "artifact_outside_managed_root"}:
+    if finding_type in {"missing_artifact", "missing_report_artifact", "missing_session_artifact", "artifact_outside_managed_root"}:
         return "artifact"
     if finding_type in {"proposal_still_running"}:
         return "run"

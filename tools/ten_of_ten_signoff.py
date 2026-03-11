@@ -14,6 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SPEC_LINT_SCRIPT = Path("tools") / ("spec_lint" + ".py")
 SELECTED_TESTS = [
     "tests/unit/ledger/test_multi_file_migrations.py",
+    "tests/unit/ledger/test_agent_sessions.py",
+    "tests/unit/scheduler/test_policy.py",
     "tests/integration/test_eval_split_contract.py",
     "tests/integration/test_campaign_build_verify.py",
     "tests/integration/test_confirm_promotion_requires_review.py",
@@ -26,6 +28,7 @@ SELECTED_TESTS = [
 CONTRACT_DOCS = [
     REPO_ROOT / "docs" / "OPERATING_CONTRACT.md",
     REPO_ROOT / "docs" / "RESEARCH_CONTRACT.md",
+    REPO_ROOT / "docs" / "AGENT_SESSION_CONTRACT.md",
 ]
 
 

@@ -24,6 +24,7 @@ from .code_proposals import CodeProposalExportError, CodeProposalImportError, co
 from .doctor import run_doctor
 from .ledger.db import apply_migrations, connect, list_schema_versions
 from .ledger.queries import (
+    get_agent_session,
     get_experiment,
     get_memory_records_by_ids,
     get_latest_daily_report,
@@ -34,6 +35,8 @@ from .ledger.queries import (
     list_campaign_experiments,
     list_campaign_proposals,
     list_daily_reports,
+    list_agent_sessions,
+    list_agent_session_events,
     list_memory_records,
     list_prior_experiments,
     list_validation_reviews,
@@ -54,7 +57,9 @@ from .scheduler import (
     archive_snapshot_document,
     build_archive_snapshot,
     generate_structured_proposal,
+    load_reviewed_scheduler_policy,
     plan_structured_queue,
+    policy_summary,
 )
 from .scoring import best_baseline, explain_experiment_score
 from .settings import LabSettings, SettingsError, load_settings
@@ -259,8 +264,12 @@ def _night_human_lines(payload: dict[str, object]) -> list[str]:
         f"Night session {status} for {payload.get('campaign_id')}.",
         f"Runs: {payload.get('run_count', 0)}. Promotions: {payload.get('promoted_count', 0)}. Failures: {payload.get('failed_count', 0)}.",
     ]
+    if payload.get("session_id"):
+        lines.append(f"Session: {payload.get('session_id')}")
     if payload.get("session_started_at") and payload.get("session_ended_at"):
         lines.append(f"Window: {payload.get('session_started_at')} -> {payload.get('session_ended_at')}")
+    if payload.get("checkpoint_count") not in (None, ""):
+        lines.append(f"Checkpoints: {payload.get('checkpoint_count')}")
     if payload.get("report_path"):
         lines.append(f"Report: {payload.get('report_path')}")
     return lines
@@ -273,6 +282,8 @@ def _report_human_lines(payload: dict[str, object]) -> list[str]:
     ]
     if payload.get("window_started_at") or payload.get("window_ended_at"):
         lines.append(f"Window: {payload.get('window_started_at')} -> {payload.get('window_ended_at')}")
+    if isinstance(payload.get("session"), dict) and payload["session"].get("session_id"):
+        lines.append(f"Session: {payload['session'].get('session_id')}")
     if payload.get("report_path"):
         lines.append(f"Report: {payload.get('report_path')}")
     return lines
@@ -1151,6 +1162,10 @@ def _cmd_night(args: argparse.Namespace) -> int:
         target_command_template=_parse_target_command(args),
         device_profile=getattr(args, "device_profile", None),
         backend=getattr(args, "backend", None),
+        max_code_runs=getattr(args, "max_code_runs", None),
+        max_structured_runs=getattr(args, "max_structured_runs", None),
+        self_review_every_runs=int(getattr(args, "self_review_every_runs", 3)),
+        stop_on_consecutive_failures=getattr(args, "stop_on_consecutive_failures", 3),
     )
     report_payload = payload.get("report") if isinstance(payload.get("report"), dict) else {}
     payload = {
@@ -1159,6 +1174,8 @@ def _cmd_night(args: argparse.Namespace) -> int:
         "report_json_path": report_payload.get("artifact_paths", {}).get("report_json") if isinstance(report_payload, dict) else None,
         "promoted_count": report_payload.get("promoted_count", 0) if isinstance(report_payload, dict) else 0,
         "failed_count": report_payload.get("failed_count", 0) if isinstance(report_payload, dict) else 0,
+        "lane_comparison": report_payload.get("lane_comparison", {}) if isinstance(report_payload, dict) else {},
+        "memory_policy_summary": report_payload.get("memory_policy_summary", {}) if isinstance(report_payload, dict) else {},
     }
     night_status = str(payload.get("status") or "completed")
     night_message = {
@@ -1258,11 +1275,22 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
             }
             if proposal_payload.get("retrieval_event_id"):
                 payload["retrieval_event"] = get_retrieval_event(connection, str(proposal_payload["retrieval_event_id"]))
+        elif getattr(args, "session", None):
+            row = get_agent_session(connection, str(args.session))
+            if not row:
+                raise SettingsError(f"session not found: {args.session}")
+            payload = {
+                "kind": "session",
+                **row,
+                "events": list_agent_session_events(connection, str(args.session)),
+            }
         elif args.campaign:
             campaign = _load_campaign(paths, args.campaign)
             experiments = list_campaign_experiments(connection, args.campaign)
             queued_proposals = list_campaign_proposals(connection, args.campaign, statuses=["queued"])
             latest_report = get_latest_daily_report(connection, args.campaign)
+            recent_sessions = list_agent_sessions(connection, args.campaign, limit=5)
+            active_policy = load_reviewed_scheduler_policy(paths, str(args.campaign))
             archive_path = paths.archive_root / args.campaign / "archive_snapshot.json"
             archive_document = (
                 read_json(archive_path)
@@ -1288,6 +1316,8 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
                 "queued_proposal_count": len(queued_proposals),
                 "queued_proposals": [row["proposal_id"] for row in queued_proposals[:10]],
                 "latest_report": latest_report,
+                "recent_sessions": recent_sessions,
+                "active_scheduler_policy": policy_summary(active_policy),
             }
             if latest_report and latest_report.get("report_json_path") and Path(str(latest_report["report_json_path"])).exists():
                 report_payload = read_json(Path(str(latest_report["report_json_path"])))
@@ -1300,7 +1330,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
                     "memory_summary": report_payload.get("memory_summary", {}),
                 }
         else:
-            raise SettingsError("inspect requires --experiment, --proposal, or --campaign")
+            raise SettingsError("inspect requires --experiment, --proposal, --session, or --campaign")
     finally:
         connection.close()
     _respond(args, payload, status=str(payload.get("status") or "ok"), message=f"inspected {payload.get('kind', 'record')}")
@@ -1514,6 +1544,10 @@ def build_parser() -> argparse.ArgumentParser:
     night_parser.add_argument("--max-runs", type=int)
     night_parser.add_argument("--allow-confirm", action="store_true")
     night_parser.add_argument("--seed-policy", choices=["fixed", "mixed"], default="fixed")
+    night_parser.add_argument("--max-structured-runs", type=int)
+    night_parser.add_argument("--max-code-runs", type=int)
+    night_parser.add_argument("--self-review-every-runs", type=int, default=3)
+    night_parser.add_argument("--stop-on-consecutive-failures", type=int, default=3)
     night_parser.add_argument("--target-command")
     night_parser.add_argument("--target-command-json")
     night_parser.add_argument("--backend")
@@ -1541,6 +1575,7 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser = subparsers.add_parser("inspect", parents=[common], help="[advanced] inspect campaigns, proposals, or experiments")
     inspect_parser.add_argument("--experiment")
     inspect_parser.add_argument("--proposal")
+    inspect_parser.add_argument("--session")
     inspect_parser.add_argument("--campaign")
     inspect_parser.set_defaults(handler=_cmd_inspect)
 

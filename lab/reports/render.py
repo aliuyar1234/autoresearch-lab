@@ -24,6 +24,7 @@ def generate_report_bundle(
     started_at: str | None = None,
     ended_at: str | None = None,
     session_notes: list[str] | None = None,
+    session_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     generated_at = utc_now_iso()
     window_experiments = filter_experiments_for_window(experiments, started_at=started_at, ended_at=ended_at)
@@ -57,6 +58,7 @@ def generate_report_bundle(
         generated_at=generated_at,
         repo_root=str(paths.repo_root),
         session_notes=session_notes,
+        session_summary=session_summary,
     )
 
     write_json(Path(artifact_paths["report_json"]), report_payload)
@@ -101,9 +103,14 @@ def generate_report_bundle(
         "window_started_at": report_payload["header"]["window_started_at"],
         "window_ended_at": report_payload["header"]["window_ended_at"],
         "session_notes": report_payload.get("session_notes", []),
+        "session": report_payload.get("session", {}),
         "recommendations": report_payload["recommendations"]["notes"],
         "current_best_candidate": report_payload.get("decision_summary", {}).get("current_best_candidate"),
+        "decision_summary": report_payload.get("decision_summary", {}),
+        "top_outcomes": report_payload.get("top_outcomes", {}),
         "top_failures": report_payload.get("decision_summary", {}).get("top_failures", []),
+        "lane_comparison": report_payload.get("lane_comparison", {}),
+        "memory_policy_summary": report_payload.get("memory_policy_summary", {}),
         "latest_champion_experiment_id": leaderboard.get("champion_experiment_id"),
         "memory_summary": report_payload.get("memory_summary", {}),
         "repeated_dead_end_rate": report_payload.get("repeated_dead_end_rate"),
@@ -143,6 +150,9 @@ def render_daily_report_markdown(report: dict[str, Any]) -> str:
     lines.extend(_render_validation_summary(report))
     lines.extend(_render_what_changed(report))
     lines.extend(_render_memory_summary(report))
+    lines.extend(_render_lane_comparison(report))
+    lines.extend(_render_memory_policy_summary(report))
+    lines.extend(_render_session_summary(report))
     lines.extend(_render_session_notes(report))
     lines.extend(_render_appendix(report))
     return "\n".join(lines) + "\n"
@@ -202,6 +212,10 @@ def _render_top_outcomes(report: dict[str, Any]) -> list[str]:
     for item in report["top_outcomes"]["best_confirmed_candidates"]:
         lines.append(
             f"- Best confirmed candidate: {item['experiment_id']} metric={item['primary_metric_value']:.6f} trust={item['trust_label']}"
+        )
+    for item in report["top_outcomes"].get("strongest_rejected_candidates", []):
+        lines.append(
+            f"- Strongest rejected candidate: {item['experiment_id']} ({item['proposal_family']}) metric={item['primary_metric_value']:.6f} trust={item['trust_label']}"
         )
     champion = report["top_outcomes"]["champion_update"]
     lines.append(
@@ -288,6 +302,43 @@ def _render_memory_summary(report: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _render_lane_comparison(report: dict[str, Any]) -> list[str]:
+    comparison = report.get("lane_comparison", {})
+    if not comparison:
+        return []
+    lines = ["", "## Lane Comparison", ""]
+    for kind in ("structured", "code_patch"):
+        entry = comparison.get(kind, {})
+        best = entry.get("best_candidate")
+        best_text = "none"
+        if isinstance(best, dict) and best.get("experiment_id"):
+            best_text = f"{best['experiment_id']} ({best['primary_metric_value']:.6f})"
+        lines.append(
+            f"- {kind}: runs={entry.get('run_count', 0)} completed={entry.get('completed_count', 0)} failed={entry.get('failed_count', 0)} validated={entry.get('validated_count', 0)} best={best_text}"
+        )
+    return lines
+
+
+def _render_memory_policy_summary(report: dict[str, Any]) -> list[str]:
+    summary = report.get("memory_policy_summary", {})
+    if not summary:
+        return []
+    lines = [
+        "",
+        "## Research Memory",
+        "",
+        f"- Validated survivors this window: {summary.get('validated_survivor_count', 0)}",
+        f"- Unstable wins this window: {summary.get('unstable_win_count', 0)}",
+    ]
+    for item in summary.get("repeated_bad_patch_patterns", [])[:3]:
+        lines.append(f"- Repeated bad patch pattern: {item['pattern']} x{item['count']}")
+    for item in summary.get("regime_successes", [])[:2]:
+        lines.append(f"- Regime success: {item['regime']} x{item['count']}")
+    for item in summary.get("regime_failures", [])[:2]:
+        lines.append(f"- Regime failure: {item['regime']} x{item['count']}")
+    return lines
+
+
 def _render_recommendations(report: dict[str, Any]) -> list[str]:
     lines = ["", "## Next Actions", ""]
     notes = list(report["recommendations"].get("notes", []))
@@ -306,6 +357,28 @@ def _render_session_notes(report: dict[str, Any]) -> list[str]:
     lines = ["", "## Session Notes", ""]
     for note in notes:
         lines.append(f"- {note}")
+    return lines
+
+
+def _render_session_summary(report: dict[str, Any]) -> list[str]:
+    session = report.get("session", {})
+    if not isinstance(session, dict) or not session.get("session_id"):
+        return []
+    lines = [
+        "",
+        "## Session",
+        "",
+        f"- Session: {session.get('session_id')}",
+        f"- Status: {session.get('status')} ({session.get('stop_reason') or 'n/a'})",
+        f"- Budgets: hours={session.get('hours_budget')} max_runs={session.get('max_runs_budget')} structured={session.get('max_structured_runs_budget')} code={session.get('max_code_runs_budget')}",
+        f"- Lane mix: structured={session.get('structured_run_count', 0)} code={session.get('code_run_count', 0)} confirm={session.get('confirm_run_count', 0)}",
+        f"- Queue refills: {session.get('queue_refills', 0)}. Self reviews: {session.get('self_review_count', 0)}. Lane switches: {session.get('lane_switch_count', 0)}.",
+    ]
+    policy = session.get("active_scheduler_policy")
+    if isinstance(policy, dict) and policy.get("policy_id"):
+        lines.append(f"- Active reviewed scheduler policy: {policy['policy_id']}")
+    if session.get("draft_scheduler_policy_path"):
+        lines.append(f"- Draft scheduler policy suggestion: {session['draft_scheduler_policy_path']}")
     return lines
 
 

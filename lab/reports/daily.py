@@ -68,6 +68,7 @@ def build_daily_report(
     generated_at: str,
     repo_root: str,
     session_notes: list[str] | None = None,
+    session_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     header = _build_header(campaign, window_experiments, window_started_at=window_started_at, window_ended_at=window_ended_at)
     top_outcomes = _build_top_outcomes(campaign, window_experiments, all_experiments, leaderboard)
@@ -75,6 +76,8 @@ def build_daily_report(
     archive_updates = _build_archive_updates(window_experiments, all_experiments)
     validation_summary = _build_validation_summary(window_experiments)
     memory_summary = _build_memory_summary(window_experiments)
+    lane_comparison = _build_lane_comparison(campaign, window_experiments)
+    memory_policy_summary = _build_memory_policy_summary(window_experiments)
     scheduler_metrics = _build_scheduler_metrics(window_experiments, all_experiments)
     recommendations = _build_recommendation_section(window_experiments)
     decision_summary = _build_decision_summary(
@@ -108,6 +111,8 @@ def build_daily_report(
         "archive_updates": archive_updates,
         "validation_summary": validation_summary,
         "memory_summary": memory_summary,
+        "memory_policy_summary": memory_policy_summary,
+        "lane_comparison": lane_comparison,
         "repeated_dead_end_rate": scheduler_metrics["repeated_dead_end_rate"],
         "memory_citation_coverage": scheduler_metrics["memory_citation_coverage"],
         "negative_citation_coverage": scheduler_metrics["negative_citation_coverage"],
@@ -115,6 +120,7 @@ def build_daily_report(
         "validation_pass_rate": scheduler_metrics["validation_pass_rate"],
         "recommendations": recommendations,
         "session_notes": list(session_notes or []),
+        "session": dict(session_summary or {}),
         "appendix": appendix,
         "leaderboard_preview": leaderboard["rows"][:10],
         "champion_cards_preview": champion_cards["cards"][:3],
@@ -158,6 +164,7 @@ def _build_top_outcomes(
         direction=direction,
         limit=3,
     )
+    strongest_rejected = _top_metric_rows(_rejected_rows(completed_window), direction=direction, limit=3)
     champion_update = _champion_update(campaign, window_experiments, all_experiments, leaderboard)
     return {
         "best_new_candidates": [
@@ -177,6 +184,15 @@ def _build_top_outcomes(
                 direction=direction,
             )
             for row in best_confirmed
+        ],
+        "strongest_rejected_candidates": [
+            _outcome_row(
+                campaign,
+                row,
+                champion_update.get("previous_champion_metric"),
+                direction=direction,
+            )
+            for row in strongest_rejected
         ],
         "champion_update": champion_update,
     }
@@ -444,6 +460,73 @@ def _build_memory_summary(window_experiments: list[dict[str, Any]]) -> dict[str,
     }
 
 
+def _build_lane_comparison(campaign: dict[str, Any], window_experiments: list[dict[str, Any]]) -> dict[str, Any]:
+    direction = str(campaign["primary_metric"]["direction"])
+    comparison: dict[str, Any] = {}
+    for kind in ("structured", "code_patch"):
+        rows = [row for row in window_experiments if str(row.get("proposal_kind") or _proposal_payload(row).get("kind") or "structured") == kind]
+        completed = [row for row in rows if is_completed_metric_run(row)]
+        best = _top_metric_rows(completed, direction=direction, limit=1)
+        comparison[kind] = {
+            "run_count": len(rows),
+            "completed_count": len(completed),
+            "failed_count": sum(1 for row in rows if str(row.get("status")) != "completed"),
+            "validated_count": sum(1 for row in rows if is_validated_promotion(row)),
+            "best_candidate": _outcome_row(campaign, best[0], None, direction=direction) if best else None,
+        }
+    return comparison
+
+
+def _build_memory_policy_summary(window_experiments: list[dict[str, Any]]) -> dict[str, Any]:
+    validated_survivors = [row for row in window_experiments if is_validated_promotion(row)]
+    unstable_wins = [
+        row
+        for row in window_experiments
+        if is_completed_metric_run(row)
+        and (
+            str(row.get("validation_state") or "") == "failed"
+            or str(row.get("disposition") or "") in {"archived", "discarded"}
+        )
+    ]
+    repeated_bad_patch_patterns = Counter()
+    regime_successes = Counter()
+    regime_failures = Counter()
+    for row in window_experiments:
+        proposal_payload = _proposal_payload(row)
+        regime_key = "|".join(
+            [
+                str(row.get("proposal_family") or proposal_payload.get("family") or "manual"),
+                str(row.get("proposal_kind") or proposal_payload.get("kind") or "structured"),
+                str(row.get("lane") or "unknown"),
+                str(row.get("eval_split") or "search_val"),
+            ]
+        )
+        if is_validated_promotion(row):
+            regime_successes[regime_key] += 1
+        elif str(row.get("status")) != "completed" or str(row.get("validation_state") or "") == "failed":
+            regime_failures[regime_key] += 1
+        code_patch = proposal_payload.get("code_patch")
+        if isinstance(code_patch, dict) and (str(row.get("status")) != "completed" or str(row.get("validation_state") or "") == "failed"):
+            target_files = ",".join(sorted(str(item) for item in code_patch.get("target_files", [])[:4])) or "unknown_targets"
+            repeated_bad_patch_patterns[f"{target_files}|{row.get('crash_class') or row.get('validation_state') or 'unknown'}"] += 1
+    return {
+        "validated_survivor_count": len(validated_survivors),
+        "unstable_win_count": len(unstable_wins),
+        "repeated_bad_patch_patterns": [
+            {"pattern": pattern, "count": count}
+            for pattern, count in repeated_bad_patch_patterns.most_common(5)
+        ],
+        "regime_successes": [
+            {"regime": regime, "count": count}
+            for regime, count in regime_successes.most_common(5)
+        ],
+        "regime_failures": [
+            {"regime": regime, "count": count}
+            for regime, count in regime_failures.most_common(5)
+        ],
+    }
+
+
 def _build_scheduler_metrics(window_experiments: list[dict[str, Any]], all_experiments: list[dict[str, Any]]) -> dict[str, float | None]:
     auto_generated = [row for row in window_experiments if _is_auto_generated(row)]
     dead_end_denominator = [row for row in auto_generated if str(_proposal_payload(row).get("family") or "") != "ablation"]
@@ -621,6 +704,15 @@ def _proposal_was_pre_exhausted(row: dict[str, Any], all_experiments: list[dict[
     ]
     stats = exhaustion_summary(prior, campaign_id=str(row.get("campaign_id") or "")).get(signature)
     return bool(stats and stats.get("exhausted"))
+
+
+def _rejected_rows(experiments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in experiments
+        if str(row.get("validation_state") or "") == "failed"
+        or str(row.get("disposition") or "") in {"archived", "discarded"}
+    ]
 
 
 def _is_auto_generated(row: dict[str, Any]) -> bool:
