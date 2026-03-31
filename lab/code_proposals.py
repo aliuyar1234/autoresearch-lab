@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from .proposals import normalize_proposal_payload
-from .paths import LabPaths
+from .paths import LabPaths, build_paths
+from .settings import load_settings
 from .semantics import is_validated_promotion
 from .utils import is_within, read_json, utc_now_iso, write_json
 
@@ -307,7 +308,7 @@ def prepare_code_patch_execution(paths: LabPaths, proposal: dict[str, Any], *, e
         raise CodeProposalImportError(f"import manifest not found: {return_manifest_path}")
     return_manifest = read_json(return_manifest_path)
     execution_root = paths.worktrees_root / experiment_id / "repo"
-    shutil.copytree(paths.repo_root, execution_root, ignore=_copytree_ignore(paths))
+    shutil.copytree(paths.repo_root, execution_root, ignore=_copytree_ignore(paths.repo_root))
 
     if str(return_manifest["return_kind"]) == "worktree":
         files_root = import_root / "files"
@@ -919,21 +920,27 @@ def _safe_stamp(value: str) -> str:
     return value.replace(":", "").replace("-", "").replace("+00:00", "Z").replace("T", "_")
 
 
-def _copytree_ignore(paths: LabPaths):
-    artifact_parent = paths.artifacts_root.parent.resolve()
-    worktree_parent = paths.worktrees_root.parent.resolve()
+def _copytree_ignore(source_repo_root: Path):
+    source_repo_root = source_repo_root.resolve()
+    source_paths = build_paths(load_settings(repo_root=source_repo_root, env={}))
+    managed_candidates = (
+        source_paths.artifacts_root,
+        source_paths.worktrees_root,
+        source_paths.cache_root,
+        source_paths.db_path,
+    )
+    ignored_paths = {
+        candidate.resolve()
+        for candidate in managed_candidates
+        if is_within(candidate.resolve(), source_repo_root)
+    }
 
     def ignore(directory: str, names: list[str]) -> set[str]:
         ignored = {name for name in names if name in {".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache"}}
         directory_path = Path(directory).resolve()
         for name in names:
             candidate = (directory_path / name).resolve()
-            if candidate == paths.artifacts_root.resolve() or candidate == paths.worktrees_root.resolve():
-                ignored.add(name)
-                continue
-            if directory_path == artifact_parent and candidate == paths.artifacts_root.resolve():
-                ignored.add(name)
-            if directory_path == worktree_parent and candidate == paths.worktrees_root.resolve():
+            if candidate in ignored_paths:
                 ignored.add(name)
         return ignored
 
